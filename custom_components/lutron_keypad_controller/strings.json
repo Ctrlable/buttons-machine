@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Lutron Keypad Controller",
+        "description": "Configure a Lutron keypad (SeeTouch, Sunnata, Alisee, Palladiom, or Tabletop). The keypad must be visible in the Lutron Caséta integration. Leave all button programming blank in the Lutron software — all logic lives here.",
+        "data": {
+          "name": "Keypad Name",
+          "device_serial": "Lutron Device Serial Number",
+          "device_name": "Device Name (as reported by Lutron)",
+          "area_name": "Area Name (as reported by Lutron)",
+          "keypad_type": "Keypad Model"
+        }
+      }
+    },
+    "error": {
+      "lutron_not_loaded": "The Lutron Caséta integration is not loaded. Set it up first.",
+      "serial_not_found": "No Lutron device found with that serial number.",
+      "invalid_config": "Invalid configuration. Check your YAML."
+    },
+    "abort": {
+      "already_configured": "This keypad is already configured."
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "lutron_keypad_controller",
+  "name": "Lutron Keypad Controller",
+  "version": "1.0.0",
+  "description": "Advanced button controller for Lutron SeeTouch, Sunnata, Alisee, Palladiom, and Tabletop keypads. Intercepts lutron_caseta_button_event events and dispatches configurable actions per button.",
+  "documentation": "https://github.com/wavesquare/lutron_keypad_controller",
+  "dependencies": ["lutron_caseta"],
+  "codeowners": ["@wavesquare"],
+  "requirements": [],
+  "iot_class": "local_push",
+  "config_flow": true
+}
