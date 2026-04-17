@@ -38,22 +38,47 @@
   },
   "options": {
     "step": {
-      "init": {
-        "title": "Configure Buttons — {keypad_name}",
-        "description": "Keypad type: **{keypad_type}**\n\nSelect a button to configure its action, or choose **Save & Close** when finished.",
+      "action": {
+        "title": "Button {button_index} of {total_buttons} — Choose Action",
+        "description": "Configuring **Button {current_button}**. Select the action this button will perform.",
         "data": {
-          "button": "Button"
+          "action_type": "Action Type"
         }
       },
-      "button": {
-        "title": "Button {button_number}",
-        "description": "**Action Target** examples by type:\n- `stateful_scene` / `ha_scene` → `scene.living_room_movie`\n- `automation` → `automation.good_night`\n- `script` → `script.party_mode`\n- `entity_toggle` → `light.lamp` or `light.lamp, fan.ceiling`\n- `cover_cycle` → `cover.living_room_shade`\n- `light_cycle_dim` → `light.cans, light.accent`\n\n`LED Entity` and `Scene Group` only apply to `stateful_scene`.",
+      "entity": {
+        "title": "Button {button_index} of {total_buttons} — Pick Entity",
+        "description": "**Action:** `{action_type}`\n\nSelect the target entity or entities.",
         "data": {
-          "label": "Button Label",
-          "action_type": "Action Type",
-          "action_target": "Action Target (entity or comma-separated entities)",
-          "led_entity": "LED Entity (stateful_scene only, optional)",
-          "scene_group": "Scene Group (stateful_scene only, optional)"
+          "action_target": "Target",
+          "led_entity": "LED Entity (optional — lights up when this scene is active)",
+          "scene_group": "Scene Group (optional — keypads sharing a group track the same active scene)",
+          "dim_levels": "Dim Levels (optional, e.g. 100, 75, 50, 25)"
+        }
+      },
+      "label": {
+        "title": "Button {button_index} of {total_buttons} — Confirm Label",
+        "description": "**Action:** `{action_type}`\n**Target:** {action_target}\n**LED:** {led_entity}\n**Group:** {scene_group}\n\nSet a short label shown in the button list.",
+        "data": {
+          "label": "Button Label"
+        }
+      },
+      "auto": {
+        "title": "Button {button_index} of {total_buttons} — Auto-Assigned",
+        "description": "Button **{current_button}** is automatically assigned as **{icon} {action}** — raises or lowers shades/lights based on the last active action. No further configuration needed.",
+        "data": {}
+      },
+      "review": {
+        "title": "Review & Save",
+        "description": "**Button Configuration:**\n\n{summary}",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "edit": {
+        "title": "Edit a Button",
+        "description": "Select which button to reconfigure.",
+        "data": {
+          "button": "Button"
         }
       }
     }

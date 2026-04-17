@@ -15,6 +15,7 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
@@ -26,6 +27,7 @@ from .const import (
     CONF_BUTTON_LABEL,
     CONF_ACTION_TYPE,
     CONF_ACTION_TARGET,
+    CONF_ACTION_PARAMS,
     CONF_LED_ENTITY,
     KEYPAD_SEETOUCH,
     KEYPAD_SEETOUCH_HYBRID,
@@ -46,6 +48,7 @@ from .const import (
     ACTION_RAISE,
     ACTION_LOWER,
     ACTION_NONE,
+    DIM_CYCLE_LEVELS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -394,128 +397,427 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — configure buttons for a keypad entry through the UI."""
+    """Wizard-style options flow: one button at a time, native entity pickers."""
 
     def __init__(self) -> None:
-        # Loaded lazily on first step; preserved across button edits until Save.
-        self._buttons: dict[str, dict] | None = None
-        self._editing: int | None = None
+        self._button_list: list[dict] = []
+        self._wizard: dict[str, Any] = {}
+        self._editing_from_review: bool = False
 
-    # ── Step 1: button overview ───────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # Helpers
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _btn_info(self) -> dict:
+        n = self._wizard["current_button"]
+        return next(b for b in self._button_list if b["number"] == n)
+
+    def _btn_index(self) -> int:
+        n = self._wizard["current_button"]
+        return next(i for i, b in enumerate(self._button_list) if b["number"] == n)
+
+    def _advance(self) -> bool:
+        """Move to next button; return False when past the last one."""
+        idx = self._btn_index()
+        if idx + 1 < len(self._button_list):
+            self._wizard["current_button"] = self._button_list[idx + 1]["number"]
+            return True
+        return False
+
+    def _progress(self) -> dict[str, str]:
+        n   = self._wizard["current_button"]
+        idx = self._btn_index()
+        return {
+            "current_button": str(n),
+            "button_index":   str(idx + 1),
+            "total_buttons":  str(self._wizard["total_buttons"]),
+        }
+
+    def _suggest_label(self, target: Any) -> str:
+        entity_id: str = target[0] if isinstance(target, list) and target else (target or "")
+        if not entity_id:
+            return ""
+        name = entity_id.split(".", 1)[-1]
+        area = self.config_entry.data.get(CONF_AREA_NAME, "").lower().replace(" ", "_")
+        if area and name.lower().startswith(area + "_"):
+            name = name[len(area) + 1:]
+        return name.replace("_", " ").title()
+
+    def _build_summary(self) -> str:
+        lines: list[str] = []
+        for btn in self._button_list:
+            n   = str(btn["number"])
+            cfg = self._wizard["buttons"].get(n, {})
+            if btn["is_raise"]:
+                lines.append(f"Button {n}: Raise  ⬆️  [raise]")
+            elif btn["is_lower"]:
+                lines.append(f"Button {n}: Lower  ⬇️  [lower]")
+            else:
+                lbl   = cfg.get(CONF_BUTTON_LABEL) or "—"
+                atype = cfg.get(CONF_ACTION_TYPE)  or "unassigned"
+                tgt   = cfg.get(CONF_ACTION_TARGET, "")
+                if isinstance(tgt, list):
+                    tgt = ", ".join(tgt)
+                suffix = f" → {tgt}" if tgt else ""
+                lines.append(f"Button {n}: {lbl}  [{atype}{suffix}]")
+        return "\n".join(lines)
+
+    def _entity_schema(self, action: str, current: dict) -> vol.Schema:
+        """Build the entity-picker schema for the given action type."""
+        cur_tgt = current.get(CONF_ACTION_TARGET)
+
+        if action == ACTION_STATEFUL_SCENE:
+            led = current.get(CONF_LED_ENTITY)
+            led_key = (vol.Optional(CONF_LED_ENTITY, default=led)
+                       if led else vol.Optional(CONF_LED_ENTITY))
+            fields: dict = {
+                vol.Required(
+                    CONF_ACTION_TARGET,
+                    default=cur_tgt if isinstance(cur_tgt, str) and cur_tgt else vol.UNDEFINED,
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="scene")),
+                led_key: selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="switch")
+                ),
+                vol.Optional("scene_group", default=current.get("scene_group", "")): str,
+            }
+
+        elif action == ACTION_HA_SCENE:
+            fields = {
+                vol.Required(
+                    CONF_ACTION_TARGET,
+                    default=cur_tgt if isinstance(cur_tgt, str) and cur_tgt else vol.UNDEFINED,
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="scene")),
+            }
+
+        elif action == ACTION_AUTOMATION:
+            fields = {
+                vol.Required(
+                    CONF_ACTION_TARGET,
+                    default=cur_tgt if isinstance(cur_tgt, str) and cur_tgt else vol.UNDEFINED,
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="automation")),
+            }
+
+        elif action == ACTION_SCRIPT:
+            fields = {
+                vol.Required(
+                    CONF_ACTION_TARGET,
+                    default=cur_tgt if isinstance(cur_tgt, str) and cur_tgt else vol.UNDEFINED,
+                ): selector.EntitySelector(selector.EntitySelectorConfig(domain="script")),
+            }
+
+        elif action == ACTION_ENTITY_TOGGLE:
+            fields = {
+                vol.Required(
+                    CONF_ACTION_TARGET,
+                    default=cur_tgt if isinstance(cur_tgt, list) else [],
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["light", "switch", "fan", "cover", "input_boolean"],
+                        multiple=True,
+                    )
+                ),
+            }
+
+        elif action == ACTION_COVER_CYCLE:
+            fields = {
+                vol.Required(
+                    CONF_ACTION_TARGET,
+                    default=cur_tgt if isinstance(cur_tgt, list) else [],
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="cover", multiple=True)
+                ),
+            }
+
+        elif action == ACTION_LIGHT_CYCLE_DIM:
+            existing = current.get(CONF_ACTION_PARAMS, {}).get("levels", DIM_CYCLE_LEVELS)
+            fields = {
+                vol.Required(
+                    CONF_ACTION_TARGET,
+                    default=cur_tgt if isinstance(cur_tgt, list) else [],
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="light", multiple=True)
+                ),
+                vol.Optional(
+                    "dim_levels",
+                    default=", ".join(str(l) for l in existing),
+                ): str,
+            }
+
+        else:
+            fields = {}
+
+        return vol.Schema(fields)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Init — bootstrap wizard from saved options, jump to button 1
+    # ─────────────────────────────────────────────────────────────────────────
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        # Load saved config once; subsequent calls from async_step_button reuse it.
-        if self._buttons is None:
-            self._buttons = dict(self.config_entry.options.get("buttons", {}))
-
         keypad_type = self.config_entry.data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC)
-        btn_list = _get_button_list(keypad_type)
+        self._button_list = _get_button_list(keypad_type)
+        self._wizard = {
+            "current_button": self._button_list[0]["number"],
+            "total_buttons":  len(self._button_list),
+            "buttons":        dict(self.config_entry.options.get("buttons", {})),
+        }
+        self._editing_from_review = False
+        return await self.async_step_action()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Page 1 — Choose action type
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def async_step_action(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        btn_info = self._btn_info()
+        btn_key  = str(self._wizard["current_button"])
+
+        # Raise/lower buttons are auto-assigned — show confirmation only
+        if btn_info["is_raise"] or btn_info["is_lower"]:
+            action = ACTION_RAISE if btn_info["is_raise"] else ACTION_LOWER
+            self._wizard["buttons"][btn_key] = {
+                CONF_BUTTON_LABEL: action.capitalize(),
+                CONF_ACTION_TYPE:  action,
+            }
+            return await self.async_step_auto()
+
+        current_action = self._wizard["buttons"].get(btn_key, {}).get(CONF_ACTION_TYPE, ACTION_NONE)
 
         if user_input is not None:
-            chosen = user_input["button"]
-            if chosen == _SAVE_KEY:
-                return self.async_create_entry(
-                    title="", data={"buttons": self._buttons}
-                )
-            self._editing = int(chosen)
-            # Auto-configure raise/lower without a form
-            btn_info = next(b for b in btn_list if b["number"] == self._editing)
-            if btn_info["is_raise"] or btn_info["is_lower"]:
-                action = ACTION_RAISE if btn_info["is_raise"] else ACTION_LOWER
-                self._buttons[str(self._editing)] = {
-                    CONF_BUTTON_LABEL: action.capitalize(),
-                    CONF_ACTION_TYPE:  action,
-                }
-                self._editing = None
-                return await self.async_step_init()
-            return await self.async_step_button()
-
-        # Build dropdown {key: display_label}
-        options: dict[str, str] = {}
-        for btn in btn_list:
-            n   = str(btn["number"])
-            cfg = self._buttons.get(n, {})
-            if btn["is_raise"]:
-                display = f"Button {n} — Raise  [raise]  (auto)"
-            elif btn["is_lower"]:
-                display = f"Button {n} — Lower  [lower]  (auto)"
+            chosen = user_input[CONF_ACTION_TYPE]
+            old    = self._wizard["buttons"].get(btn_key, {}).get(CONF_ACTION_TYPE)
+            # Clear stale entity config when action type changes
+            if chosen != old:
+                self._wizard["buttons"][btn_key] = {CONF_ACTION_TYPE: chosen}
             else:
-                lbl   = cfg.get(CONF_BUTTON_LABEL, "")
-                atype = cfg.get(CONF_ACTION_TYPE, "")
-                if lbl and atype:
-                    display = f"Button {n} — {lbl}  [{atype}]"
-                elif atype:
-                    display = f"Button {n}  [{atype}]"
-                else:
-                    display = f"Button {n}  (unassigned)"
-            options[n] = display
-        options[_SAVE_KEY] = "✓  Save & Close"
+                self._wizard["buttons"].setdefault(btn_key, {})[CONF_ACTION_TYPE] = chosen
+
+            if chosen in (ACTION_NONE,):
+                self._wizard["buttons"][btn_key] = {
+                    CONF_BUTTON_LABEL: "", CONF_ACTION_TYPE: ACTION_NONE
+                }
+                if self._editing_from_review:
+                    self._editing_from_review = False
+                    return await self.async_step_review()
+                if not self._advance():
+                    return await self.async_step_review()
+                return await self.async_step_action()
+
+            if chosen in (ACTION_RAISE, ACTION_LOWER):
+                self._wizard["buttons"][btn_key] = {
+                    CONF_BUTTON_LABEL: chosen.capitalize(), CONF_ACTION_TYPE: chosen
+                }
+                if self._editing_from_review:
+                    self._editing_from_review = False
+                    return await self.async_step_review()
+                if not self._advance():
+                    return await self.async_step_review()
+                return await self.async_step_action()
+
+            return await self.async_step_entity()
 
         return self.async_show_form(
-            step_id="init",
+            step_id="action",
             data_schema=vol.Schema(
-                {vol.Required("button"): vol.In(options)}
+                {
+                    vol.Required(CONF_ACTION_TYPE, default=current_action): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(value=ACTION_STATEFUL_SCENE,  label="🎬  Scene (stateful)     — tracks active button, LED feedback"),
+                                selector.SelectOptionDict(value=ACTION_HA_SCENE,        label="💡  Scene (simple)       — activates a scene"),
+                                selector.SelectOptionDict(value=ACTION_AUTOMATION,      label="▶️   Automation           — triggers an automation"),
+                                selector.SelectOptionDict(value=ACTION_SCRIPT,          label="📜  Script               — runs a script"),
+                                selector.SelectOptionDict(value=ACTION_ENTITY_TOGGLE,   label="🔀  Toggle Entities      — lights, switches, fans, covers"),
+                                selector.SelectOptionDict(value=ACTION_COVER_CYCLE,     label="🪟  Shade Cycle          — open → stop → close"),
+                                selector.SelectOptionDict(value=ACTION_LIGHT_CYCLE_DIM, label="🔆  Dim Cycle            — 100% → 75% → 50% → 25% → off"),
+                                selector.SelectOptionDict(value=ACTION_RAISE,           label="⬆️   Raise                — context-aware raise"),
+                                selector.SelectOptionDict(value=ACTION_LOWER,           label="⬇️   Lower                — context-aware lower"),
+                                selector.SelectOptionDict(value=ACTION_NONE,            label="➖  None / Skip          — no action assigned"),
+                            ],
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    ),
+                }
             ),
+            description_placeholders=self._progress(),
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Auto-assign confirmation (raise/lower buttons)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def async_step_auto(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        btn_info = self._btn_info()
+        action   = ACTION_RAISE if btn_info["is_raise"] else ACTION_LOWER
+
+        if user_input is not None:
+            if self._editing_from_review:
+                self._editing_from_review = False
+                return await self.async_step_review()
+            if not self._advance():
+                return await self.async_step_review()
+            return await self.async_step_action()
+
+        return self.async_show_form(
+            step_id="auto",
+            data_schema=vol.Schema({}),
             description_placeholders={
-                "keypad_name": self.config_entry.title,
-                "keypad_type": keypad_type,
+                **self._progress(),
+                "action": action,
+                "icon":   "⬆️" if action == ACTION_RAISE else "⬇️",
             },
         )
 
-    # ── Step 2: configure one button ─────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # Page 2 — Pick entity / target
+    # ─────────────────────────────────────────────────────────────────────────
 
-    async def async_step_button(
+    async def async_step_entity(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        btn_num = self._editing
-        current = self._buttons.get(str(btn_num), {})
+        btn_key = str(self._wizard["current_button"])
+        action  = self._wizard["buttons"].get(btn_key, {}).get(CONF_ACTION_TYPE, ACTION_NONE)
+        current = self._wizard["buttons"].get(btn_key, {})
 
         if user_input is not None:
-            btn_data: dict[str, Any] = {
-                CONF_BUTTON_LABEL: user_input.get(CONF_BUTTON_LABEL, "").strip(),
-                CONF_ACTION_TYPE:  user_input[CONF_ACTION_TYPE],
-            }
-            target = user_input.get(CONF_ACTION_TARGET, "").strip()
-            if target:
-                btn_data[CONF_ACTION_TARGET] = target
-            led = user_input.get(CONF_LED_ENTITY, "").strip()
-            if led:
-                btn_data[CONF_LED_ENTITY] = led
-            group = user_input.get("scene_group", "").strip()
-            if group:
-                btn_data["scene_group"] = group
+            cfg = self._wizard["buttons"].setdefault(btn_key, {})
 
-            self._buttons[str(btn_num)] = btn_data
-            self._editing = None
-            return await self.async_step_init()
+            tgt = user_input.get(CONF_ACTION_TARGET)
+            if tgt is not None:
+                cfg[CONF_ACTION_TARGET] = tgt
+
+            led = user_input.get(CONF_LED_ENTITY)
+            if led:
+                cfg[CONF_LED_ENTITY] = led
+            elif CONF_LED_ENTITY in user_input:
+                cfg.pop(CONF_LED_ENTITY, None)
+
+            grp = user_input.get("scene_group", "").strip()
+            if grp:
+                cfg["scene_group"] = grp
+            else:
+                cfg.pop("scene_group", None)
+
+            raw_levels = user_input.get("dim_levels", "")
+            if raw_levels:
+                parsed = [int(x.strip()) for x in str(raw_levels).split(",")
+                          if x.strip().isdigit()]
+                if parsed:
+                    cfg.setdefault(CONF_ACTION_PARAMS, {})["levels"] = parsed
+
+            return await self.async_step_label()
 
         return self.async_show_form(
-            step_id="button",
+            step_id="entity",
+            data_schema=self._entity_schema(action, current),
+            description_placeholders={**self._progress(), "action_type": action},
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Page 3 — Label & confirm
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def async_step_label(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        btn_key   = str(self._wizard["current_button"])
+        cfg       = self._wizard["buttons"].get(btn_key, {})
+        action    = cfg.get(CONF_ACTION_TYPE, "")
+        target    = cfg.get(CONF_ACTION_TARGET, "")
+        suggested = cfg.get(CONF_BUTTON_LABEL) or self._suggest_label(target)
+
+        if user_input is not None:
+            label = (user_input.get(CONF_BUTTON_LABEL) or suggested).strip()
+            self._wizard["buttons"][btn_key][CONF_BUTTON_LABEL] = label
+            if self._editing_from_review:
+                self._editing_from_review = False
+                return await self.async_step_review()
+            if not self._advance():
+                return await self.async_step_review()
+            return await self.async_step_action()
+
+        target_str = ", ".join(target) if isinstance(target, list) else (target or "—")
+        return self.async_show_form(
+            step_id="label",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_BUTTON_LABEL, default=suggested): str}
+            ),
+            description_placeholders={
+                **self._progress(),
+                "action_type":   action,
+                "action_target": target_str,
+                "led_entity":    cfg.get(CONF_LED_ENTITY, "") or "—",
+                "scene_group":   cfg.get("scene_group", "") or "—",
+            },
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Final — Review & Save
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def async_step_review(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        if user_input is not None:
+            if user_input.get("action") == "save":
+                return self.async_create_entry(
+                    title="", data={"buttons": self._wizard["buttons"]}
+                )
+            return await self.async_step_edit()
+
+        return self.async_show_form(
+            step_id="review",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_BUTTON_LABEL,
-                        default=current.get(CONF_BUTTON_LABEL, ""),
-                    ): str,
-                    vol.Required(
-                        CONF_ACTION_TYPE,
-                        default=current.get(CONF_ACTION_TYPE, ACTION_NONE),
-                    ): vol.In(_ACTION_TYPE_OPTIONS),
-                    vol.Optional(
-                        CONF_ACTION_TARGET,
-                        default=current.get(CONF_ACTION_TARGET, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_LED_ENTITY,
-                        default=current.get(CONF_LED_ENTITY, ""),
-                    ): str,
-                    vol.Optional(
-                        "scene_group",
-                        default=current.get("scene_group", ""),
-                    ): str,
+                    vol.Required("action", default="save"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(value="save", label="✓  Save"),
+                                selector.SelectOptionDict(value="edit", label="← Edit a button"),
+                            ],
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
                 }
             ),
-            description_placeholders={"button_number": str(btn_num)},
+            description_placeholders={"summary": self._build_summary()},
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Edit — Pick which button to re-configure
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def async_step_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        if user_input is not None:
+            self._wizard["current_button"] = int(user_input["button"])
+            self._editing_from_review = True
+            return await self.async_step_action()
+
+        options: dict[str, str] = {}
+        for btn in self._button_list:
+            n   = str(btn["number"])
+            cfg = self._wizard["buttons"].get(n, {})
+            if btn["is_raise"]:
+                options[n] = f"Button {n} — Raise ⬆️  (auto)"
+            elif btn["is_lower"]:
+                options[n] = f"Button {n} — Lower ⬇️  (auto)"
+            else:
+                lbl   = cfg.get(CONF_BUTTON_LABEL, "")
+                atype = cfg.get(CONF_ACTION_TYPE, "")
+                options[n] = (
+                    f"Button {n}" +
+                    (f" — {lbl}" if lbl else "") +
+                    (f"  [{atype}]" if atype else "  (unassigned)")
+                )
+
+        return self.async_show_form(
+            step_id="edit",
+            data_schema=vol.Schema({vol.Required("button"): vol.In(options)}),
         )
