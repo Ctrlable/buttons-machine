@@ -23,6 +23,10 @@ from .const import (
     CONF_DEVICE_NAME,
     CONF_AREA_NAME,
     CONF_KEYPAD_TYPE,
+    CONF_BUTTON_LABEL,
+    CONF_ACTION_TYPE,
+    CONF_ACTION_TARGET,
+    CONF_LED_ENTITY,
     KEYPAD_SEETOUCH,
     KEYPAD_SEETOUCH_HYBRID,
     KEYPAD_SUNNATA,
@@ -32,6 +36,16 @@ from .const import (
     KEYPAD_TABLETOP,
     KEYPAD_PICO,
     KEYPAD_GENERIC,
+    ACTION_STATEFUL_SCENE,
+    ACTION_HA_SCENE,
+    ACTION_AUTOMATION,
+    ACTION_SCRIPT,
+    ACTION_ENTITY_TOGGLE,
+    ACTION_COVER_CYCLE,
+    ACTION_LIGHT_CYCLE_DIM,
+    ACTION_RAISE,
+    ACTION_LOWER,
+    ACTION_NONE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -92,6 +106,48 @@ BUTTON_TYPE_KEYWORDS = {
     "keypad", "pico", "remote", "seetouch", "sunnata",
     "alisee", "palladiom", "tabletop", "hybrid",
 }
+
+# ── Button layout per keypad type ─────────────────────────────────────────────
+# (main_button_count, has_raise_lower)
+_KEYPAD_LAYOUTS: dict[str, tuple[int, bool]] = {
+    KEYPAD_SEETOUCH:        (6,  True),
+    KEYPAD_SEETOUCH_HYBRID: (5,  True),
+    KEYPAD_SUNNATA:         (4,  True),
+    KEYPAD_SUNNATA_HYBRID:  (3,  True),
+    KEYPAD_ALISEE:          (5,  True),
+    KEYPAD_PALLADIOM:       (5,  True),
+    KEYPAD_TABLETOP:        (10, False),
+    KEYPAD_PICO:            (3,  False),
+    KEYPAD_GENERIC:         (6,  True),
+}
+
+_SAVE_KEY = "__save__"
+
+_ACTION_TYPE_OPTIONS: dict[str, str] = {
+    ACTION_STATEFUL_SCENE:  "Stateful Scene (tracks active button, LED control)",
+    ACTION_HA_SCENE:        "HA Scene",
+    ACTION_AUTOMATION:      "Automation",
+    ACTION_SCRIPT:          "Script",
+    ACTION_ENTITY_TOGGLE:   "Entity Toggle",
+    ACTION_COVER_CYCLE:     "Cover Cycle (open → stop → close)",
+    ACTION_LIGHT_CYCLE_DIM: "Light Dim Cycle (100 → 75 → 50 → 25 → off)",
+    ACTION_NONE:            "None (no action)",
+}
+
+
+def _get_button_list(keypad_type: str) -> list[dict]:
+    """Return ordered button descriptors for the given keypad type."""
+    main_count, has_rl = _KEYPAD_LAYOUTS.get(
+        keypad_type, _KEYPAD_LAYOUTS[KEYPAD_GENERIC]
+    )
+    buttons = [
+        {"number": i, "is_raise": False, "is_lower": False}
+        for i in range(1, main_count + 1)
+    ]
+    if has_rl:
+        buttons.append({"number": main_count + 1, "is_raise": True,  "is_lower": False})
+        buttons.append({"number": main_count + 2, "is_raise": False, "is_lower": True})
+    return buttons
 
 
 def _infer_keypad_type(device_type: str) -> str:
@@ -338,22 +394,128 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — button assignments live in YAML."""
+    """Options flow — configure buttons for a keypad entry through the UI."""
+
+    def __init__(self) -> None:
+        # Loaded lazily on first step; preserved across button edits until Save.
+        self._buttons: dict[str, dict] | None = None
+        self._editing: int | None = None
+
+    # ── Step 1: button overview ───────────────────────────────────────────────
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        # Load saved config once; subsequent calls from async_step_button reuse it.
+        if self._buttons is None:
+            self._buttons = dict(self.config_entry.options.get("buttons", {}))
+
+        keypad_type = self.config_entry.data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC)
+        btn_list = _get_button_list(keypad_type)
+
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            chosen = user_input["button"]
+            if chosen == _SAVE_KEY:
+                return self.async_create_entry(
+                    title="", data={"buttons": self._buttons}
+                )
+            self._editing = int(chosen)
+            # Auto-configure raise/lower without a form
+            btn_info = next(b for b in btn_list if b["number"] == self._editing)
+            if btn_info["is_raise"] or btn_info["is_lower"]:
+                action = ACTION_RAISE if btn_info["is_raise"] else ACTION_LOWER
+                self._buttons[str(self._editing)] = {
+                    CONF_BUTTON_LABEL: action.capitalize(),
+                    CONF_ACTION_TYPE:  action,
+                }
+                self._editing = None
+                return await self.async_step_init()
+            return await self.async_step_button()
+
+        # Build dropdown {key: display_label}
+        options: dict[str, str] = {}
+        for btn in btn_list:
+            n   = str(btn["number"])
+            cfg = self._buttons.get(n, {})
+            if btn["is_raise"]:
+                display = f"Button {n} — Raise  [raise]  (auto)"
+            elif btn["is_lower"]:
+                display = f"Button {n} — Lower  [lower]  (auto)"
+            else:
+                lbl   = cfg.get(CONF_BUTTON_LABEL, "")
+                atype = cfg.get(CONF_ACTION_TYPE, "")
+                if lbl and atype:
+                    display = f"Button {n} — {lbl}  [{atype}]"
+                elif atype:
+                    display = f"Button {n}  [{atype}]"
+                else:
+                    display = f"Button {n}  (unassigned)"
+            options[n] = display
+        options[_SAVE_KEY] = "✓  Save & Close"
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema(
+                {vol.Required("button"): vol.In(options)}
+            ),
             description_placeholders={
-                "note": (
-                    "Button assignments for this keypad are configured in "
-                    "configuration.yaml under lutron_keypad_controller:. "
-                    "See the README for the full YAML schema."
-                )
+                "keypad_name": self.config_entry.title,
+                "keypad_type": keypad_type,
             },
+        )
+
+    # ── Step 2: configure one button ─────────────────────────────────────────
+
+    async def async_step_button(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        btn_num = self._editing
+        current = self._buttons.get(str(btn_num), {})
+
+        if user_input is not None:
+            btn_data: dict[str, Any] = {
+                CONF_BUTTON_LABEL: user_input.get(CONF_BUTTON_LABEL, "").strip(),
+                CONF_ACTION_TYPE:  user_input[CONF_ACTION_TYPE],
+            }
+            target = user_input.get(CONF_ACTION_TARGET, "").strip()
+            if target:
+                btn_data[CONF_ACTION_TARGET] = target
+            led = user_input.get(CONF_LED_ENTITY, "").strip()
+            if led:
+                btn_data[CONF_LED_ENTITY] = led
+            group = user_input.get("scene_group", "").strip()
+            if group:
+                btn_data["scene_group"] = group
+
+            self._buttons[str(btn_num)] = btn_data
+            self._editing = None
+            return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="button",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_BUTTON_LABEL,
+                        default=current.get(CONF_BUTTON_LABEL, ""),
+                    ): str,
+                    vol.Required(
+                        CONF_ACTION_TYPE,
+                        default=current.get(CONF_ACTION_TYPE, ACTION_NONE),
+                    ): vol.In(_ACTION_TYPE_OPTIONS),
+                    vol.Optional(
+                        CONF_ACTION_TARGET,
+                        default=current.get(CONF_ACTION_TARGET, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_LED_ENTITY,
+                        default=current.get(CONF_LED_ENTITY, ""),
+                    ): str,
+                    vol.Optional(
+                        "scene_group",
+                        default=current.get("scene_group", ""),
+                    ): str,
+                }
+            ),
+            description_placeholders={"button_number": str(btn_num)},
         )

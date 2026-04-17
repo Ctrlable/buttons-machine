@@ -39,8 +39,22 @@
   "options": {
     "step": {
       "init": {
-        "title": "Keypad Options",
-        "description": "{note}"
+        "title": "Configure Buttons — {keypad_name}",
+        "description": "Keypad type: **{keypad_type}**\n\nSelect a button to configure its action, or choose **Save & Close** when finished.",
+        "data": {
+          "button": "Button"
+        }
+      },
+      "button": {
+        "title": "Button {button_number}",
+        "description": "**Action Target** examples by type:\n- `stateful_scene` / `ha_scene` → `scene.living_room_movie`\n- `automation` → `automation.good_night`\n- `script` → `script.party_mode`\n- `entity_toggle` → `light.lamp` or `light.lamp, fan.ceiling`\n- `cover_cycle` → `cover.living_room_shade`\n- `light_cycle_dim` → `light.cans, light.accent`\n\n`LED Entity` and `Scene Group` only apply to `stateful_scene`.",
+        "data": {
+          "label": "Button Label",
+          "action_type": "Action Type",
+          "action_target": "Action Target (entity or comma-separated entities)",
+          "led_entity": "LED Entity (stateful_scene only, optional)",
+          "scene_group": "Scene Group (stateful_scene only, optional)"
+        }
       }
     }
   }

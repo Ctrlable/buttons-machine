@@ -194,6 +194,38 @@ CONFIG_SCHEMA = vol.Schema(
 
 PLATFORMS: list[str] = ["sensor"]
 
+
+def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
+    """Convert options {"1": {…}, "2": {…}} to a list suitable for LutronKeypadsController."""
+    result = []
+    for btn_num_str, btn_data in buttons_options.items():
+        try:
+            btn_num = int(btn_num_str)
+        except ValueError:
+            continue
+        action_type = btn_data.get(CONF_ACTION_TYPE, ACTION_NONE)
+        if not action_type or action_type == ACTION_NONE:
+            continue
+        btn_cfg: dict = {
+            CONF_BUTTON_NUMBER: btn_num,
+            CONF_BUTTON_LABEL:  btn_data.get(CONF_BUTTON_LABEL, ""),
+            CONF_ACTION_TYPE:   action_type,
+        }
+        target = btn_data.get(CONF_ACTION_TARGET, "")
+        if target:
+            # Parse comma-separated entity lists entered from the UI
+            if isinstance(target, str) and "," in target:
+                btn_cfg[CONF_ACTION_TARGET] = [t.strip() for t in target.split(",") if t.strip()]
+            else:
+                btn_cfg[CONF_ACTION_TARGET] = target
+        if btn_data.get(CONF_LED_ENTITY):
+            btn_cfg[CONF_LED_ENTITY] = btn_data[CONF_LED_ENTITY]
+        if btn_data.get("scene_group"):
+            btn_cfg["scene_group"] = btn_data["scene_group"]
+        result.append(btn_cfg)
+    return result
+
+
 # ── Shared scene-group state ───────────────────────────────────────────────────
 # scene_groups[group_name] = button_number of the last activated stateful scene
 _SCENE_GROUPS: dict[str, int | None] = {}
@@ -221,23 +253,54 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up from a config entry (UI flow)."""
+    """Set up from a config entry; reads button config from options (UI) first."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault("controllers", [])
+    hass.data[DOMAIN].setdefault("entry_controllers", {})
 
-    # Config-entry keypads have no buttons yet — user must add them via YAML
-    # or Options Flow (future). For now we just note the entry is loaded.
-    _LOGGER.info(
-        "Lutron Keypad Controller config entry loaded: %s (serial %s). "
-        "Add button config in configuration.yaml under lutron_keypad_controller:",
-        entry.title,
-        entry.data.get(CONF_DEVICE_SERIAL, "N/A"),
-    )
+    buttons_cfg = _build_buttons_from_options(entry.options.get("buttons", {}))
+
+    kp_cfg: dict = {
+        "name":           entry.title,
+        CONF_DEVICE_SERIAL: entry.data.get(CONF_DEVICE_SERIAL, ""),
+        CONF_DEVICE_NAME:   entry.data.get(CONF_DEVICE_NAME, ""),
+        CONF_AREA_NAME:     entry.data.get(CONF_AREA_NAME, ""),
+        CONF_KEYPAD_TYPE:   entry.data.get(CONF_KEYPAD_TYPE, "generic"),
+        CONF_BUTTONS:       buttons_cfg,
+    }
+
+    ctrl = LutronKeypadsController(hass, kp_cfg)
+    if buttons_cfg:
+        ctrl.async_register()
+        _LOGGER.info("Keypad '%s' loaded from UI options with %d button(s)", entry.title, len(buttons_cfg))
+    else:
+        _LOGGER.info(
+            "Keypad '%s' loaded (no buttons configured yet). "
+            "Click the gear icon to configure buttons, or add YAML under lutron_keypad_controller:",
+            entry.title,
+        )
+
+    hass.data[DOMAIN]["entry_controllers"][entry.entry_id] = ctrl
+    hass.data[DOMAIN]["controllers"].append(ctrl)
+
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    ctrl = hass.data[DOMAIN].get("entry_controllers", {}).pop(entry.entry_id, None)
+    if ctrl is not None:
+        ctrl.async_unregister()
+        try:
+            hass.data[DOMAIN]["controllers"].remove(ctrl)
+        except ValueError:
+            pass
     return True
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry when options are saved so new button config takes effect."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 # ── Controller ────────────────────────────────────────────────────────────────
@@ -264,14 +327,23 @@ class LutronKeypadsController:
         self._last_action: dict | None = None        # last non-raise/lower action
         self._cover_states: dict[int, str] = {}     # cover cycle state per button
         self._light_dim_indices: dict[int, int] = {}# dim level index per button
+        self._unsubscribe = None                     # event listener cancel handle
 
     # ── Registration ──────────────────────────────────────────────────────────
 
     @callback
     def async_register(self) -> None:
         """Subscribe to lutron_caseta_button_event events."""
-        self.hass.bus.async_listen(LUTRON_EVENT, self._handle_event)
+        self._unsubscribe = self.hass.bus.async_listen(LUTRON_EVENT, self._handle_event)
         _LOGGER.info("Lutron Keypad Controller '%s' registered (serial=%s)", self.name, self.serial)
+
+    @callback
+    def async_unregister(self) -> None:
+        """Unsubscribe from events (called on entry unload)."""
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
+            _LOGGER.debug("Lutron Keypad Controller '%s' unregistered", self.name)
 
     # ── Event matching ────────────────────────────────────────────────────────
 
@@ -395,9 +467,10 @@ class LutronKeypadsController:
         prev_btn = self._active_scene_btn
         self._active_scene_btn = btn_num
 
-        # 3. Update shared scene group if defined
-        if self.scene_group:
-            _SCENE_GROUPS[self.scene_group] = btn_num
+        # 3. Update shared scene group if defined (per-button setting takes priority)
+        group = btn_cfg.get("scene_group") or self.scene_group
+        if group:
+            _SCENE_GROUPS[group] = btn_num
 
         # 4. Update LEDs: turn off previous, turn on new
         await self._update_leds(prev_btn, btn_num)
