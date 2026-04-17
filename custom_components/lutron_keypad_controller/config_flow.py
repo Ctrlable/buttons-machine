@@ -12,6 +12,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
@@ -114,23 +115,28 @@ def _is_keypad_device(device: dict) -> bool:
 
 
 def _get_lutron_bridge(hass: HomeAssistant):
-    """Return the first available Smartbridge from hass.data['lutron_caseta'].
+    """Return the first Smartbridge from a fully-loaded lutron_caseta entry.
 
-    Supports both the modern LutronCasetaData dataclass layout (2023.6+)
-    and the older plain-dict layout.
+    Modern HA (2023.6+) stores integration data in entry.runtime_data, not
+    hass.data[DOMAIN].  We walk config entries first, then fall back to the
+    old hass.data dict layout for installations on older HA versions.
+    Returns None if no entry is loaded yet (caller treats this as "retry").
     """
-    lutron_data = hass.data.get("lutron_caseta", {})
-    if not lutron_data:
-        return None
-
-    for _entry_id, entry_data in lutron_data.items():
-        # Modern layout: LutronCasetaData dataclass with .bridge attribute
-        bridge = getattr(entry_data, "bridge", None)
-        if bridge is not None:
-            return bridge
-        # Older layout: plain dict
-        if isinstance(entry_data, dict):
-            bridge = entry_data.get("bridge")
+    for entry in hass.config_entries.async_entries("lutron_caseta"):
+        if entry.state is not ConfigEntryState.LOADED:
+            continue
+        # Modern layout: entry.runtime_data is a LutronCasetaData dataclass
+        runtime = getattr(entry, "runtime_data", None)
+        if runtime is not None:
+            bridge = getattr(runtime, "bridge", None)
+            if bridge is not None:
+                return bridge
+        # Legacy layout: hass.data["lutron_caseta"][entry_id]["bridge"]
+        entry_data = hass.data.get("lutron_caseta", {}).get(entry.entry_id)
+        if entry_data is not None:
+            bridge = getattr(entry_data, "bridge", None)
+            if bridge is None and isinstance(entry_data, dict):
+                bridge = entry_data.get("bridge")
             if bridge is not None:
                 return bridge
     return None
@@ -188,10 +194,12 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
 
-        if "lutron_caseta" not in self.hass.data:
+        # Hard abort only when lutron_caseta is not configured at all.
+        lutron_entries = self.hass.config_entries.async_entries("lutron_caseta")
+        if not lutron_entries:
             return self.async_abort(reason="lutron_not_loaded")
 
-        # Discover on first visit
+        # Discover on first visit (reset if we previously got nothing)
         if not self._discovered_keypads:
             self._discovered_keypads = await self.hass.async_add_executor_job(
                 _discover_keypads, self.hass
