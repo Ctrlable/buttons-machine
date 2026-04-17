@@ -2,24 +2,46 @@
   "config": {
     "step": {
       "user": {
-        "title": "Lutron Keypad Controller",
-        "description": "Configure a Lutron keypad (SeeTouch, Sunnata, Alisee, Palladiom, or Tabletop). The keypad must be visible in the Lutron Caséta integration. Leave all button programming blank in the Lutron software — all logic lives here.",
+        "title": "Select Keypad",
+        "description": "Found {count} keypad(s) on your Lutron bridge. Select the one you want to configure.",
         "data": {
-          "name": "Keypad Name",
-          "device_serial": "Lutron Device Serial Number",
-          "device_name": "Device Name (as reported by Lutron)",
-          "area_name": "Area Name (as reported by Lutron)",
-          "keypad_type": "Keypad Model"
+          "device_serial": "Keypad"
+        }
+      },
+      "confirm": {
+        "title": "Confirm Keypad",
+        "description": "**Area:** {area}\n**Device:** {device_name}\n**Type detected:** {keypad_type}\n**Serial:** {serial}\n**Lutron type string:** {lutron_type}\n\nSet a friendly name for this keypad entry.",
+        "data": {
+          "name": "Friendly Name"
+        }
+      },
+      "manual": {
+        "title": "Manual Entry",
+        "description": "{note}",
+        "data": {
+          "name": "Friendly Name",
+          "device_serial": "Device Serial Number",
+          "device_name": "Device Name (optional)",
+          "area_name": "Area Name (optional)"
         }
       }
     },
     "error": {
       "lutron_not_loaded": "The Lutron Caséta integration is not loaded. Set it up first.",
-      "serial_not_found": "No Lutron device found with that serial number.",
-      "invalid_config": "Invalid configuration. Check your YAML."
+      "device_not_found": "Selected device could not be found. Try again.",
+      "serial_required": "A serial number is required."
     },
     "abort": {
-      "already_configured": "This keypad is already configured."
+      "already_configured": "This keypad is already configured.",
+      "lutron_not_loaded": "The Lutron Caséta integration must be set up before adding keypads."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Keypad Options",
+        "description": "{note}"
+      }
     }
   }
 }
