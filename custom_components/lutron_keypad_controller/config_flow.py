@@ -35,7 +35,6 @@ from .const import (
     ACTION_RAISE,
     ACTION_LOWER,
     ACTION_TYPE_LABELS,
-    ACTION_LABEL_TO_TYPE,
     ACTION_TYPE_DOMAINS,
     MULTI_ENTITY_ACTIONS,
     get_button_list,
@@ -403,9 +402,8 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
             btn_data   = dict(existing.get(n, {}))
             old_action = btn_data.get(CONF_ACTION_TYPE)
 
-            label        = user_input.get(f"button_{n}_label", "").strip()
-            action_label = user_input.get(f"button_{n}_action_type", ACTION_TYPE_LABELS[ACTION_NONE])
-            action       = ACTION_LABEL_TO_TYPE.get(action_label, ACTION_NONE)
+            label  = user_input.get(f"button_{n}_label", "").strip()
+            action = user_input.get(f"button_{n}_action_type", ACTION_NONE)
 
             if old_action != action:
                 btn_data.pop(CONF_ACTION_TARGET, None)
@@ -466,11 +464,8 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
             # If any action type changed, save partial state and re-render so
             # the EntitySelector domain filter reflects the new action type.
             action_type_changed = any(
-                ACTION_LABEL_TO_TYPE.get(
-                    user_input.get(f"button_{str(b['number'])}_action_type",
-                                   ACTION_TYPE_LABELS[ACTION_NONE]),
-                    ACTION_NONE,
-                ) != existing.get(str(b["number"]), {}).get(CONF_ACTION_TYPE, ACTION_NONE)
+                user_input.get(f"button_{str(b['number'])}_action_type", ACTION_NONE)
+                != existing.get(str(b["number"]), {}).get(CONF_ACTION_TYPE, ACTION_NONE)
                 for b in configurable
             )
             if action_type_changed:
@@ -484,23 +479,27 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
 
         # Build form schema dynamically based on current action types
         fields: dict = {}
-        action_labels = list(ACTION_TYPE_LABELS.values())
+        action_options = [
+            {"value": raw, "label": label}
+            for raw, label in ACTION_TYPE_LABELS.items()
+        ]
 
         for btn in configurable:
             n   = str(btn["number"])
             cur = existing.get(n, {})
-            cur_label        = cur.get("label", "")
-            cur_action_raw   = cur.get(CONF_ACTION_TYPE, ACTION_NONE)
-            cur_action_label = ACTION_TYPE_LABELS.get(cur_action_raw, ACTION_TYPE_LABELS[ACTION_NONE])
-            domains          = ACTION_TYPE_DOMAINS.get(cur_action_raw, [])
-            is_multi         = cur_action_raw in MULTI_ENTITY_ACTIONS
+            cur_label      = cur.get("label", "")
+            cur_action_raw = cur.get(CONF_ACTION_TYPE, ACTION_NONE)
+            domains        = ACTION_TYPE_DOMAINS.get(cur_action_raw, [])
+            is_multi       = cur_action_raw in MULTI_ENTITY_ACTIONS
 
-            fields[vol.Optional(f"button_{n}_label", default=cur_label)] = str
-            fields[vol.Optional(f"button_{n}_action_type", default=cur_action_label)] = (
+            fields[vol.Optional(f"button_{n}_label", default=cur_label)] = (
+                selector.TextSelector()
+            )
+            fields[vol.Optional(f"button_{n}_action_type", default=cur_action_raw)] = (
                 selector.SelectSelector(
                     selector.SelectSelectorConfig(
-                        options=action_labels,
-                        mode=selector.SelectSelectorMode.LIST,
+                        options=action_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 )
             )

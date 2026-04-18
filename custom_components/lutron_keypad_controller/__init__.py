@@ -291,12 +291,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove entity_2 / entity_3 / entity_4 registry entries left by v2.1.x."""
+    """Remove stale entity registry entries from older versions."""
     ent_reg = er.async_get(hass)
     for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-        if any(f"_entity_{n}" in reg_entry.unique_id for n in ("2", "3", "4")):
+        uid = reg_entry.unique_id
+        # v2.1.x multi-slot text entities
+        if any(f"_entity_{n}" in uid for n in ("2", "3", "4")):
             ent_reg.async_remove(reg_entry.entity_id)
-            _LOGGER.info("Removed orphaned entity: %s", reg_entry.entity_id)
+            _LOGGER.info("Removed orphaned multi-slot entity: %s", reg_entry.entity_id)
+        # v2.3.x text entities now replaced by read-only sensors
+        elif reg_entry.entity_id.startswith("text.") and any(
+            uid.endswith(s) for s in ("_entity_1", "_led", "_scene_group")
+        ):
+            ent_reg.async_remove(reg_entry.entity_id)
+            _LOGGER.info("Removed old text entity (now a sensor): %s", reg_entry.entity_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
