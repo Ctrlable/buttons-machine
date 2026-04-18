@@ -264,7 +264,7 @@ async def _find_led_entities(
     # Find the lutron_caseta HA device that matches our keypad
     lutron_device = None
     for device in dev_reg.devices.values():
-        for ident_domain, identifier in device.identifiers:
+        for ident_domain, identifier, *_ in device.identifiers:
             if ident_domain != "lutron_caseta":
                 continue
             id_str = str(identifier).strip()
