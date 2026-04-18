@@ -105,6 +105,26 @@ ACTION_TYPE_LABELS: dict[str, str] = {
 }
 ACTION_LABEL_TO_TYPE: dict[str, str] = {v: k for k, v in ACTION_TYPE_LABELS.items()}
 
+# ── Action type → allowed entity domains ─────────────────────────────────────
+ACTION_TYPE_DOMAINS: dict[str, list[str]] = {
+    ACTION_STATEFUL_SCENE:  ["scene"],
+    ACTION_HA_SCENE:        ["scene"],
+    ACTION_AUTOMATION:      ["automation"],
+    ACTION_SCRIPT:          ["script"],
+    ACTION_ENTITY_TOGGLE:   ["light", "switch", "fan", "input_boolean", "media_player", "cover"],
+    ACTION_COVER_CYCLE:     ["cover"],
+    ACTION_LIGHT_CYCLE_DIM: ["light"],
+    ACTION_RAISE:           [],
+    ACTION_LOWER:           [],
+    ACTION_NONE:            [],
+}
+
+MULTI_ENTITY_ACTIONS: frozenset[str] = frozenset({
+    ACTION_ENTITY_TOGGLE,
+    ACTION_COVER_CYCLE,
+    ACTION_LIGHT_CYCLE_DIM,
+})
+
 # ── Per-keypad button layout ──────────────────────────────────────────────────
 # (main_button_count, has_raise_lower)
 KEYPAD_LAYOUTS: dict[str, tuple[int, bool]] = {

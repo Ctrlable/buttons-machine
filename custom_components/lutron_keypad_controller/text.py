@@ -1,4 +1,4 @@
-"""Text platform — per-button label, action target, LED, and scene group fields."""
+"""Text platform — per-button label, LED, and scene group fields."""
 from __future__ import annotations
 
 import logging
@@ -15,7 +15,6 @@ from .const import (
     KEYPAD_GENERIC,
     ACTION_STATEFUL_SCENE,
     CONF_ACTION_TYPE,
-    CONF_ACTION_TARGET,
     CONF_LED_ENTITY,
     get_button_list,
 )
@@ -33,16 +32,11 @@ async def async_setup_entry(
     entities: list[TextEntity] = []
 
     for btn in get_button_list(keypad_type):
-        n          = str(btn["number"])
-        action     = buttons_cfg.get(n, {}).get(CONF_ACTION_TYPE, "")
-        is_fixed   = btn["is_raise"] or btn["is_lower"]
+        n      = str(btn["number"])
+        action = buttons_cfg.get(n, {}).get(CONF_ACTION_TYPE, "")
 
         # Every button gets a label field
         entities.append(LutronButtonLabelText(entry, btn["number"]))
-
-        # Entity target for all non-raise/lower buttons
-        if not is_fixed:
-            entities.append(LutronButtonTargetText(entry, btn["number"]))
 
         # LED entity + scene group only when stateful_scene is active
         if action == ACTION_STATEFUL_SCENE:
@@ -126,33 +120,6 @@ class LutronButtonLabelText(_LutronButtonTextBase):
 
     async def async_set_value(self, value: str) -> None:
         await self._save("label", value.strip() or f"Button {self._btn_number}")
-
-
-class LutronButtonTargetText(_LutronButtonTextBase):
-    """Entity ID (or comma-separated IDs) that this button acts on."""
-
-    @property
-    def unique_id(self) -> str:
-        return f"{self._entry.entry_id}_button_{self._btn_number}_entity"
-
-    @property
-    def name(self) -> str:
-        label = self._get_btn_cfg().get("label") or f"Button {self._btn_number}"
-        return f"{label} Entity"
-
-    @property
-    def icon(self) -> str:
-        return "mdi:target"
-
-    @property
-    def native_value(self) -> str | None:
-        val = self._get_btn_cfg().get(CONF_ACTION_TARGET, "")
-        if isinstance(val, list):
-            return ", ".join(val)
-        return val or None
-
-    async def async_set_value(self, value: str) -> None:
-        await self._save(CONF_ACTION_TARGET, value.strip())
 
 
 class LutronButtonLedText(_LutronButtonTextBase):
