@@ -21,6 +21,7 @@ from .const import (
     CONF_ACTION_TYPE,
     CONF_ACTION_TARGET,
     CONF_LED_ENTITY,
+    ACTION_STATEFUL_SCENE,
     KEYPAD_SEETOUCH,
     KEYPAD_SEETOUCH_HYBRID,
     KEYPAD_SUNNATA,
@@ -380,7 +381,74 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 # ── Options Flow ──────────────────────────────────────────────────────────────
 
 class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
-    """Single-page options form: label + action type + entity target per button."""
+    """Single-page options form with EntitySelector per button.
+
+    Re-renders automatically when an action type changes so the entity
+    selector domain filter updates to match the new action type.
+    """
+
+    # ── Internal helper ───────────────────────────────────────────────────────
+
+    def _build_buttons_from_input(
+        self,
+        user_input: dict[str, Any],
+        configurable: list[dict],
+        fixed: list[dict],
+        existing: dict,
+    ) -> dict[str, dict]:
+        new_buttons: dict[str, dict] = {}
+
+        for btn in configurable:
+            n          = str(btn["number"])
+            btn_data   = dict(existing.get(n, {}))
+            old_action = btn_data.get(CONF_ACTION_TYPE)
+
+            label        = user_input.get(f"button_{n}_label", "").strip()
+            action_label = user_input.get(f"button_{n}_action_type", ACTION_TYPE_LABELS[ACTION_NONE])
+            action       = ACTION_LABEL_TO_TYPE.get(action_label, ACTION_NONE)
+
+            if old_action != action:
+                btn_data.pop(CONF_ACTION_TARGET, None)
+                btn_data.pop(CONF_LED_ENTITY, None)
+                btn_data.pop("scene_group", None)
+
+            btn_data["label"]          = label or f"Button {btn['number']}"
+            btn_data[CONF_ACTION_TYPE] = action
+
+            target_key = f"button_{n}_action_target"
+            if target_key in user_input:
+                target = user_input[target_key]
+                if target:
+                    btn_data[CONF_ACTION_TARGET] = target
+                else:
+                    btn_data.pop(CONF_ACTION_TARGET, None)
+
+            led_key = f"button_{n}_led_entity"
+            if led_key in user_input:
+                led = user_input[led_key]
+                if led:
+                    btn_data[CONF_LED_ENTITY] = led
+                else:
+                    btn_data.pop(CONF_LED_ENTITY, None)
+
+            sg_key = f"button_{n}_scene_group"
+            if sg_key in user_input:
+                sg = user_input[sg_key].strip() if isinstance(user_input[sg_key], str) else ""
+                if sg:
+                    btn_data["scene_group"] = sg
+                else:
+                    btn_data.pop("scene_group", None)
+
+            new_buttons[n] = btn_data
+
+        for btn in fixed:
+            n      = str(btn["number"])
+            action = ACTION_RAISE if btn["is_raise"] else ACTION_LOWER
+            new_buttons[n] = {"label": action.capitalize(), CONF_ACTION_TYPE: action}
+
+        return new_buttons
+
+    # ── Main step ─────────────────────────────────────────────────────────────
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -391,48 +459,30 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
         fixed        = [b for b in all_buttons if b["is_raise"] or b["is_lower"]]
 
         if user_input is not None:
-            new_buttons: dict[str, dict] = dict(existing)
+            new_buttons = self._build_buttons_from_input(
+                user_input, configurable, fixed, existing
+            )
 
-            for btn in configurable:
-                n          = str(btn["number"])
-                label_key  = f"button_{n}_label"
-                action_key = f"button_{n}_action_type"
-                target_key = f"button_{n}_action_target"
-
-                label        = user_input.get(label_key, "").strip()
-                action_label = user_input.get(action_key, ACTION_TYPE_LABELS[ACTION_NONE])
-                action       = ACTION_LABEL_TO_TYPE.get(action_label, ACTION_NONE)
-
-                btn_data = dict(existing.get(n, {}))
-                old_action = btn_data.get(CONF_ACTION_TYPE)
-
-                if old_action != action:
-                    btn_data.pop(CONF_ACTION_TARGET, None)
-                    btn_data.pop(CONF_LED_ENTITY, None)
-                    btn_data.pop("scene_group", None)
-
-                btn_data["label"]          = label or f"Button {btn['number']}"
-                btn_data[CONF_ACTION_TYPE] = action
-
-                target = user_input.get(target_key)
-                if target:
-                    btn_data[CONF_ACTION_TARGET] = target
-                elif target_key not in user_input and old_action == action:
-                    pass  # keep existing target when field wasn't shown
-
-                new_buttons[n] = btn_data
-
-            for btn in fixed:
-                n      = str(btn["number"])
-                action = ACTION_RAISE if btn["is_raise"] else ACTION_LOWER
-                new_buttons[n] = {
-                    "label":          action.capitalize(),
-                    CONF_ACTION_TYPE: action,
-                }
+            # If any action type changed, save partial state and re-render so
+            # the EntitySelector domain filter reflects the new action type.
+            action_type_changed = any(
+                ACTION_LABEL_TO_TYPE.get(
+                    user_input.get(f"button_{str(b['number'])}_action_type",
+                                   ACTION_TYPE_LABELS[ACTION_NONE]),
+                    ACTION_NONE,
+                ) != existing.get(str(b["number"]), {}).get(CONF_ACTION_TYPE, ACTION_NONE)
+                for b in configurable
+            )
+            if action_type_changed:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    options={**self.config_entry.options, "buttons": new_buttons},
+                )
+                return await self.async_step_init()
 
             return self.async_create_entry(title="", data={"buttons": new_buttons})
 
-        # Build form fields
+        # Build form schema dynamically based on current action types
         fields: dict = {}
         action_labels = list(ACTION_TYPE_LABELS.values())
 
@@ -442,6 +492,8 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
             cur_label        = cur.get("label", "")
             cur_action_raw   = cur.get(CONF_ACTION_TYPE, ACTION_NONE)
             cur_action_label = ACTION_TYPE_LABELS.get(cur_action_raw, ACTION_TYPE_LABELS[ACTION_NONE])
+            domains          = ACTION_TYPE_DOMAINS.get(cur_action_raw, [])
+            is_multi         = cur_action_raw in MULTI_ENTITY_ACTIONS
 
             fields[vol.Optional(f"button_{n}_label", default=cur_label)] = str
             fields[vol.Optional(f"button_{n}_action_type", default=cur_action_label)] = (
@@ -453,10 +505,7 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
                 )
             )
 
-            # EntitySelector filtered by the current action type's domains
-            domains = ACTION_TYPE_DOMAINS.get(cur_action_raw, [])
             if domains:
-                is_multi   = cur_action_raw in MULTI_ENTITY_ACTIONS
                 cur_target = cur.get(CONF_ACTION_TARGET)
                 target_key = (
                     vol.Optional(f"button_{n}_action_target", default=cur_target)
@@ -464,17 +513,29 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
                     else vol.Optional(f"button_{n}_action_target")
                 )
                 fields[target_key] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain=domains,
-                        multiple=is_multi,
-                    )
+                    selector.EntitySelectorConfig(domain=domains, multiple=is_multi)
                 )
 
-        fixed_lines = []
-        for btn in fixed:
-            icon   = "⬆️" if btn["is_raise"] else "⬇️"
-            action = "Raise" if btn["is_raise"] else "Lower"
-            fixed_lines.append(f"Button {btn['number']}: {icon} {action} (auto-assigned)")
+            if cur_action_raw == ACTION_STATEFUL_SCENE:
+                cur_led = cur.get(CONF_LED_ENTITY)
+                led_key = (
+                    vol.Optional(f"button_{n}_led_entity", default=cur_led)
+                    if cur_led
+                    else vol.Optional(f"button_{n}_led_entity")
+                )
+                fields[led_key] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="switch")
+                )
+                cur_sg = cur.get("scene_group", "")
+                fields[vol.Optional(f"button_{n}_scene_group", default=cur_sg)] = (
+                    selector.TextSelector()
+                )
+
+        fixed_lines = [
+            f"Button {b['number']}: {'⬆️' if b['is_raise'] else '⬇️'} "
+            f"{'Raise' if b['is_raise'] else 'Lower'} (auto-assigned)"
+            for b in fixed
+        ]
 
         return self.async_show_form(
             step_id="init",

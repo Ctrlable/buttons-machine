@@ -125,6 +125,10 @@ MULTI_ENTITY_ACTIONS: frozenset[str] = frozenset({
     ACTION_LIGHT_CYCLE_DIM,
 })
 
+ACTION_TYPES_NEEDING_ENTITY: frozenset[str] = frozenset(
+    k for k, v in ACTION_TYPE_DOMAINS.items() if v
+)
+
 # ── Per-keypad button layout ──────────────────────────────────────────────────
 # (main_button_count, has_raise_lower)
 KEYPAD_LAYOUTS: dict[str, tuple[int, bool]] = {

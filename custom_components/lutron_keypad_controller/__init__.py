@@ -96,7 +96,7 @@ from homeassistant.core import HomeAssistant, Event, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
-from homeassistant.helpers import entity_platform
+from homeassistant.helpers import entity_platform, entity_registry as er
 from homeassistant.const import (
     SERVICE_TURN_ON,
     SERVICE_TURN_OFF,
@@ -285,8 +285,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["entry_controllers"][entry.entry_id] = ctrl
     hass.data[DOMAIN]["controllers"].append(ctrl)
 
+    await _cleanup_orphaned_entities(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove entity_2 / entity_3 / entity_4 registry entries left by v2.1.x."""
+    ent_reg = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if any(f"_entity_{n}" in reg_entry.unique_id for n in ("2", "3", "4")):
+            ent_reg.async_remove(reg_entry.entity_id)
+            _LOGGER.info("Removed orphaned entity: %s", reg_entry.entity_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -687,13 +697,17 @@ class LutronKeypadsController:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _normalize_targets(targets: Any) -> list[str]:
-    """Return a flat list of entity_id strings from scalar or list target."""
+    """Return a flat list of entity_id strings from scalar, comma-separated, or list target."""
     if targets is None:
         return []
     if isinstance(targets, str):
+        if not targets:
+            return []
+        if "," in targets:
+            return [t.strip() for t in targets.split(",") if t.strip()]
         return [targets]
     if isinstance(targets, (list, tuple)):
-        return list(targets)
+        return [str(t) for t in targets if t]
     return [str(targets)]
 
 
