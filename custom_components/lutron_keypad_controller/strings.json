@@ -10,7 +10,7 @@
       },
       "confirm": {
         "title": "Confirm Keypad",
-        "description": "**Area:** {area}\n**Device:** {device_name}\n**Type detected:** {keypad_type}\n**Serial:** {serial}\n**Lutron type string:** {lutron_type}\n\nSet a friendly name for this keypad entry.",
+        "description": "**Area:** {area}\n**Device:** {device_name}\n**Type detected:** {keypad_type}\n**Serial:** {serial}\n**Lutron type string:** {lutron_type}\n**Buttons:** {button_count}\n\nSet a friendly name for this keypad entry.",
         "data": {
           "name": "Friendly Name"
         }

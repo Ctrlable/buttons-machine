@@ -14,7 +14,7 @@ from .const import (
     DOMAIN,
     CONF_KEYPAD_TYPE,
     KEYPAD_GENERIC,
-    get_button_list,
+    get_button_layout,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,10 +25,9 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    keypad_type = entry.data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC)
     entities = [
         LutronButtonSwitch(entry, btn["number"], btn["is_raise"], btn["is_lower"])
-        for btn in get_button_list(keypad_type)
+        for btn in get_button_layout(entry.data)
     ]
     async_add_entities(entities, True)
 

@@ -151,3 +151,20 @@ def get_button_list(keypad_type: str) -> list[dict]:
         buttons.append({"number": main_count + 1, "is_raise": True,  "is_lower": False})
         buttons.append({"number": main_count + 2, "is_raise": False, "is_lower": True})
     return buttons
+
+
+def get_button_layout(entry_data: dict) -> list[dict]:
+    """Return button descriptors using bridge-detected data, falling back to keypad type map."""
+    button_numbers = entry_data.get("button_numbers")
+    if button_numbers:
+        raise_btn = entry_data.get("raise_button")
+        lower_btn = entry_data.get("lower_button")
+        return [
+            {
+                "number": n,
+                "is_raise": n == raise_btn,
+                "is_lower": n == lower_btn,
+            }
+            for n in sorted(button_numbers)
+        ]
+    return get_button_list(entry_data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC))

@@ -1,10 +1,4 @@
-"""Config flow for Lutron Keypad Controller.
-
-Queries the already-running lutron_caseta integration for all known
-button-capable devices and presents them as a searchable dropdown.
-The user picks one device, the keypad type is auto-detected from
-the Lutron device type string, and serial + area are pre-filled.
-"""
+"""Config flow for Lutron Keypad Controller."""
 from __future__ import annotations
 
 import logging
@@ -41,35 +35,32 @@ from .const import (
     ACTION_LOWER,
     ACTION_TYPE_LABELS,
     ACTION_LABEL_TO_TYPE,
+    ACTION_TYPE_DOMAINS,
+    MULTI_ENTITY_ACTIONS,
     get_button_list,
+    get_button_layout,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# ── Lutron device-type string → our keypad type constant ─────────────────────
+# ── Lutron device-type string → our keypad type ───────────────────────────────
 LUTRON_TYPE_MAP: dict[str, str] = {
-    # SeeTouch
     "SeeTouchKeypad":               KEYPAD_SEETOUCH,
     "SeeTouchHybridKeypad":         KEYPAD_SEETOUCH_HYBRID,
     "HybridSeeTouch":               KEYPAD_SEETOUCH_HYBRID,
     "SeeTouch":                     KEYPAD_SEETOUCH,
-    # Sunnata
     "SunnataKeypad":                KEYPAD_SUNNATA,
     "SunnataHybridKeypad":          KEYPAD_SUNNATA_HYBRID,
     "SunnataSwitchingKeypad":       KEYPAD_SUNNATA,
     "Sunnata":                      KEYPAD_SUNNATA,
-    # Alisee
     "AliseeKeypad":                 KEYPAD_ALISEE,
     "Alisee":                       KEYPAD_ALISEE,
-    # Palladiom
     "PalladiomKeypad":              KEYPAD_PALLADIOM,
     "Palladiom":                    KEYPAD_PALLADIOM,
     "PalladiomWirelessKeypad":      KEYPAD_PALLADIOM,
-    # Tabletop
     "TabletopSeeTouch":             KEYPAD_TABLETOP,
     "SeeTouchTabletop":             KEYPAD_TABLETOP,
     "TabletopKeypad":               KEYPAD_TABLETOP,
-    # Pico
     "Pico1Button":                  KEYPAD_PICO,
     "Pico2Button":                  KEYPAD_PICO,
     "Pico2ButtonRaiseLower":        KEYPAD_PICO,
@@ -165,6 +156,65 @@ def _build_device_options(keypads: list[dict]) -> dict[str, str]:
     return options
 
 
+def _detect_button_layout(hass: HomeAssistant, serial: str, keypad_type: str) -> dict:
+    """Query bridge.button_devices for the actual buttons on this device.
+
+    Returns a dict with button_numbers / configurable_buttons / raise_button /
+    lower_button to be stored in config entry data.  Returns {} on failure so
+    the caller falls back to the family-based count.
+    """
+    bridge = _get_lutron_bridge(hass)
+    if bridge is None:
+        return {}
+
+    button_devices: dict = getattr(bridge, "button_devices", None) or {}
+    if not button_devices:
+        _LOGGER.warning(
+            "bridge.button_devices not available for serial %s; using fallback button count",
+            serial,
+        )
+        return {}
+
+    matching = [
+        bd for bd in button_devices.values()
+        if str(bd.get("serial", "")) == serial
+    ]
+    if not matching:
+        _LOGGER.warning(
+            "No button_devices matched serial %s; using fallback button count", serial
+        )
+        return {}
+
+    button_numbers: list[int] = sorted(
+        {int(bd["button_number"]) for bd in matching if "button_number" in bd}
+    )
+    if not button_numbers:
+        return {}
+
+    raise_btn: int | None = None
+    lower_btn: int | None = None
+    for bd in matching:
+        name  = bd.get("name", "").lower()
+        bnum  = int(bd.get("button_number", -1))
+        if name.endswith((" raise", "-raise", " up", "-up")):
+            raise_btn = bnum
+        elif name.endswith((" lower", "-lower", " down", "-down")):
+            lower_btn = bnum
+
+    configurable = [n for n in button_numbers if n not in (raise_btn, lower_btn)]
+
+    _LOGGER.debug(
+        "Detected %d button(s) for serial %s: configurable=%s raise=%s lower=%s",
+        len(button_numbers), serial, configurable, raise_btn, lower_btn,
+    )
+    return {
+        "button_numbers":      button_numbers,
+        "configurable_buttons": configurable,
+        "raise_button":        raise_btn,
+        "lower_button":        lower_btn,
+    }
+
+
 # ── Config Flow ───────────────────────────────────────────────────────────────
 
 class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -175,6 +225,7 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._discovered_keypads: list[dict] = []
         self._selected_device: dict | None = None
+        self._detected_layout: dict = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -206,6 +257,10 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(selected_serial)
                 self._abort_if_unique_id_configured()
+                # Detect actual button layout from bridge
+                serial      = str(self._selected_device.get("serial", ""))
+                ktype       = _infer_keypad_type(self._selected_device.get("type", ""))
+                self._detected_layout = _detect_button_layout(self.hass, serial, ktype)
                 return await self.async_step_confirm()
 
         return self.async_show_form(
@@ -242,8 +297,16 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_AREA_NAME:     area_name,
                     CONF_KEYPAD_TYPE:   keypad_type,
                     "lutron_type":      device_type,
+                    **self._detected_layout,
                 },
             )
+
+        btn_nums = self._detected_layout.get("button_numbers", [])
+        if btn_nums:
+            btn_str = f"{len(btn_nums)} buttons detected from bridge"
+        else:
+            fallback = get_button_list(keypad_type)
+            btn_str  = f"{len(fallback)} buttons (estimated from keypad type)"
 
         return self.async_show_form(
             step_id="confirm",
@@ -251,11 +314,12 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {vol.Required("name", default=suggested_name): str}
             ),
             description_placeholders={
-                "area":        area_name or "—",
-                "device_name": device_name,
-                "keypad_type": keypad_type,
-                "serial":      serial,
-                "lutron_type": device_type,
+                "area":         area_name or "—",
+                "device_name":  device_name,
+                "keypad_type":  keypad_type,
+                "serial":       serial,
+                "lutron_type":  device_type,
+                "button_count": btn_str,
             },
         )
 
@@ -316,15 +380,13 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 # ── Options Flow ──────────────────────────────────────────────────────────────
 
 class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
-    """Single-page options form: label + action type for every button."""
+    """Single-page options form: label + action type + entity target per button."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        keypad_type = self.config_entry.data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC)
-        all_buttons = get_button_list(keypad_type)
-        existing    = dict(self.config_entry.options.get("buttons", {}))
-
+        all_buttons  = get_button_layout(self.config_entry.data)
+        existing     = dict(self.config_entry.options.get("buttons", {}))
         configurable = [b for b in all_buttons if not b["is_raise"] and not b["is_lower"]]
         fixed        = [b for b in all_buttons if b["is_raise"] or b["is_lower"]]
 
@@ -335,33 +397,42 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
                 n          = str(btn["number"])
                 label_key  = f"button_{n}_label"
                 action_key = f"button_{n}_action_type"
+                target_key = f"button_{n}_action_target"
 
                 label        = user_input.get(label_key, "").strip()
                 action_label = user_input.get(action_key, ACTION_TYPE_LABELS[ACTION_NONE])
                 action       = ACTION_LABEL_TO_TYPE.get(action_label, ACTION_NONE)
 
                 btn_data = dict(existing.get(n, {}))
-                # Clear stale entity config when action type changes
-                if btn_data.get(CONF_ACTION_TYPE) != action:
+                old_action = btn_data.get(CONF_ACTION_TYPE)
+
+                if old_action != action:
                     btn_data.pop(CONF_ACTION_TARGET, None)
                     btn_data.pop(CONF_LED_ENTITY, None)
                     btn_data.pop("scene_group", None)
 
-                btn_data["label"]       = label or f"Button {btn['number']}"
+                btn_data["label"]          = label or f"Button {btn['number']}"
                 btn_data[CONF_ACTION_TYPE] = action
+
+                target = user_input.get(target_key)
+                if target:
+                    btn_data[CONF_ACTION_TARGET] = target
+                elif target_key not in user_input and old_action == action:
+                    pass  # keep existing target when field wasn't shown
+
                 new_buttons[n] = btn_data
 
             for btn in fixed:
                 n      = str(btn["number"])
                 action = ACTION_RAISE if btn["is_raise"] else ACTION_LOWER
                 new_buttons[n] = {
-                    "label":       action.capitalize(),
+                    "label":          action.capitalize(),
                     CONF_ACTION_TYPE: action,
                 }
 
             return self.async_create_entry(title="", data={"buttons": new_buttons})
 
-        # Build per-button fields
+        # Build form fields
         fields: dict = {}
         action_labels = list(ACTION_TYPE_LABELS.values())
 
@@ -381,6 +452,23 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
                     )
                 )
             )
+
+            # EntitySelector filtered by the current action type's domains
+            domains = ACTION_TYPE_DOMAINS.get(cur_action_raw, [])
+            if domains:
+                is_multi   = cur_action_raw in MULTI_ENTITY_ACTIONS
+                cur_target = cur.get(CONF_ACTION_TARGET)
+                target_key = (
+                    vol.Optional(f"button_{n}_action_target", default=cur_target)
+                    if cur_target
+                    else vol.Optional(f"button_{n}_action_target")
+                )
+                fields[target_key] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=domains,
+                        multiple=is_multi,
+                    )
+                )
 
         fixed_lines = []
         for btn in fixed:
