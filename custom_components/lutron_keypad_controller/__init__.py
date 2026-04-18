@@ -278,6 +278,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_DEVICE_NAME:   entry.data.get(CONF_DEVICE_NAME, ""),
         CONF_AREA_NAME:     entry.data.get(CONF_AREA_NAME, ""),
         CONF_KEYPAD_TYPE:   entry.data.get(CONF_KEYPAD_TYPE, "generic"),
+        "device_id":        entry.data.get("device_id", ""),
         CONF_BUTTONS:       buttons_cfg,
     }
 
@@ -344,7 +345,8 @@ class LutronKeypadsController:
     def __init__(self, hass: HomeAssistant, config: dict) -> None:
         self.hass = hass
         self.name: str = config["name"]
-        self.serial: str = config.get(CONF_DEVICE_SERIAL, "").strip()
+        self.serial: str = str(config.get(CONF_DEVICE_SERIAL, "")).strip()
+        self.device_id: str = str(config.get("device_id", "")).strip()
         self.device_name: str = config.get(CONF_DEVICE_NAME, "").strip().lower()
         self.area_name: str = config.get(CONF_AREA_NAME, "").strip().lower()
         self.keypad_type: str = config.get(CONF_KEYPAD_TYPE, "generic")
@@ -382,13 +384,18 @@ class LutronKeypadsController:
 
     def _matches_event(self, event_data: dict) -> bool:
         """Return True if this event belongs to our keypad."""
-        # Match by serial number (most reliable)
+        # device_id is the most reliable — immune to serial type mismatches
+        ev_device_id = str(event_data.get("device_id", "")).strip()
+        if ev_device_id and self.device_id and ev_device_id == self.device_id:
+            return True
+
+        # Serial — convert both sides to string; Lutron fires it as an int
         if self.serial:
             ev_serial = str(event_data.get("serial", "")).strip()
-            if ev_serial == self.serial:
+            if ev_serial and ev_serial == str(self.serial):
                 return True
 
-        # Fallback: match by device_name + area_name
+        # Last resort: device_name + area_name
         ev_device = str(event_data.get("device_name", "")).lower()
         ev_area   = str(event_data.get("area_name", "")).lower()
 
@@ -407,26 +414,45 @@ class LutronKeypadsController:
     def _handle_event(self, event: Event) -> None:
         """Called for every lutron_caseta_button_event on the bus."""
         data = event.data
-        action_type = data.get("action", "press")   # "press" or "release"
 
-        # Only act on press events (release events are ignored by default)
-        if action_type == "release":
+        _LOGGER.debug(
+            "'%s': event received — serial=%s device_id=%s "
+            "btn=%s leap_btn=%s action=%s",
+            self.name,
+            data.get("serial"), data.get("device_id"),
+            data.get("button_number"), data.get("leap_button_number"),
+            data.get("action"),
+        )
+
+        if data.get("action", "press") == "release":
             return
 
         if not self._matches_event(data):
             _LOGGER.debug(
-                "'%s': ignoring event (serial=%s, device=%s, area=%s) — "
-                "our serial=%s device=%s area=%s",
+                "'%s': ignoring event — ev serial=%s device_id=%s / "
+                "our serial=%s device_id=%s",
                 self.name,
-                data.get("serial"), data.get("device_name"), data.get("area_name"),
-                self.serial, self.device_name, self.area_name,
+                data.get("serial"), data.get("device_id"),
+                self.serial, self.device_id,
             )
             return
 
-        btn_num: int = int(data.get("button_number", -1))
-        if btn_num < 0:
-            _LOGGER.warning("'%s': got event with no button_number: %s", self.name, data)
+        # button_number is null on RA3/QSX/SeeTouch keypads; use leap_button_number
+        raw_btn = data.get("button_number")
+        if raw_btn is None:
+            raw_btn = data.get("leap_button_number")
+        if raw_btn is None:
+            _LOGGER.debug(
+                "'%s': event has no button_number or leap_button_number: %s",
+                self.name, data,
+            )
             return
+        btn_num = int(raw_btn)
+
+        _LOGGER.debug(
+            "'%s': matched — resolved btn_num=%d, configured buttons=%s",
+            self.name, btn_num, list(self._buttons.keys()),
+        )
 
         btn_cfg = self._buttons.get(btn_num)
         if btn_cfg is None:

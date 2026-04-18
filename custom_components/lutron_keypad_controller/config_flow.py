@@ -156,6 +156,18 @@ def _build_device_options(keypads: list[dict]) -> dict[str, str]:
     return options
 
 
+def _resolve_btn_num(bd: dict) -> int | None:
+    """Return a button's number, preferring leap_button_number when button_number is null."""
+    for key in ("button_number", "leap_button_number"):
+        raw = bd.get(key)
+        if raw is not None:
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
 def _detect_button_layout(hass: HomeAssistant, serial: str, keypad_type: str) -> dict:
     """Query bridge.button_devices for the actual buttons on this device.
 
@@ -185,17 +197,20 @@ def _detect_button_layout(hass: HomeAssistant, serial: str, keypad_type: str) ->
         )
         return {}
 
-    button_numbers: list[int] = sorted(
-        {int(bd["button_number"]) for bd in matching if "button_number" in bd}
-    )
+    button_numbers: list[int] = sorted({
+        n for bd in matching
+        if (n := _resolve_btn_num(bd)) is not None
+    })
     if not button_numbers:
         return {}
 
     raise_btn: int | None = None
     lower_btn: int | None = None
     for bd in matching:
-        name  = bd.get("name", "").lower()
-        bnum  = int(bd.get("button_number", -1))
+        name = bd.get("name", "").lower()
+        bnum = _resolve_btn_num(bd)
+        if bnum is None:
+            continue
         if name.endswith((" raise", "-raise", " up", "-up")):
             raise_btn = bnum
         elif name.endswith((" lower", "-lower", " down", "-down")):
@@ -297,6 +312,7 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_AREA_NAME:     area_name,
                     CONF_KEYPAD_TYPE:   keypad_type,
                     "lutron_type":      device_type,
+                    "device_id":        device.get("device_id", ""),
                     **self._detected_layout,
                 },
             )
