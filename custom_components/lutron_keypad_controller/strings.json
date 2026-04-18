@@ -38,48 +38,10 @@
   },
   "options": {
     "step": {
-      "action": {
-        "title": "Button {button_index} of {total_buttons} — Choose Action",
-        "description": "Configuring **Button {current_button}**. Select the action this button will perform.",
-        "data": {
-          "action_type": "Action Type"
-        }
-      },
-      "entity": {
-        "title": "Button {button_index} of {total_buttons} — Pick Entity",
-        "description": "**Action:** `{action_type}`\n\nSelect the target entity or entities.",
-        "data": {
-          "action_target": "Target",
-          "led_entity": "LED Entity (optional — lights up when this scene is active)",
-          "scene_group": "Scene Group (optional — keypads sharing a group track the same active scene)",
-          "dim_levels": "Dim Levels (optional, e.g. 100, 75, 50, 25)"
-        }
-      },
-      "label": {
-        "title": "Button {button_index} of {total_buttons} — Confirm Label",
-        "description": "**Action:** `{action_type}`\n**Target:** {action_target}\n**LED:** {led_entity}\n**Group:** {scene_group}\n\nSet a short label shown in the button list.",
-        "data": {
-          "label": "Button Label"
-        }
-      },
-      "auto": {
-        "title": "Button {button_index} of {total_buttons} — Auto-Assigned",
-        "description": "Button **{current_button}** is automatically assigned as **{icon} {action}** — raises or lowers shades/lights based on the last active action. No further configuration needed.",
+      "init": {
+        "title": "Configure Buttons",
+        "description": "{fixed_buttons}",
         "data": {}
-      },
-      "review": {
-        "title": "Review & Save",
-        "description": "**Button Configuration:**\n\n{summary}",
-        "data": {
-          "action": "Action"
-        }
-      },
-      "edit": {
-        "title": "Edit a Button",
-        "description": "Select which button to reconfigure.",
-        "data": {
-          "button": "Button"
-        }
       }
     }
   }

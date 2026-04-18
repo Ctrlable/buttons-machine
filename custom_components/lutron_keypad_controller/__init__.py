@@ -192,7 +192,7 @@ CONFIG_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
-PLATFORMS: list[str] = ["sensor"]
+PLATFORMS: list[str] = ["sensor", "switch", "select", "text"]
 
 
 def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
@@ -202,6 +202,8 @@ def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
         try:
             btn_num = int(btn_num_str)
         except ValueError:
+            continue
+        if not btn_data.get("enabled", True):
             continue
         action_type = btn_data.get(CONF_ACTION_TYPE, ACTION_NONE)
         if not action_type or action_type == ACTION_NONE:
@@ -283,11 +285,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["entry_controllers"][entry.entry_id] = ctrl
     hass.data[DOMAIN]["controllers"].append(ctrl)
 
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     ctrl = hass.data[DOMAIN].get("entry_controllers", {}).pop(entry.entry_id, None)
     if ctrl is not None:
         ctrl.async_unregister()
@@ -295,7 +298,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.data[DOMAIN]["controllers"].remove(ctrl)
         except ValueError:
             pass
-    return True
+    return unload_ok
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

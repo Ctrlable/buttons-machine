@@ -89,3 +89,45 @@ RAISE_LOWER_STEP = 10
 
 SENSOR_SUFFIX_STATUS     = "status"
 SENSOR_SUFFIX_LAST_BTN   = "last_button"
+
+# ── Action type friendly labels ───────────────────────────────────────────────
+ACTION_TYPE_LABELS: dict[str, str] = {
+    ACTION_STATEFUL_SCENE:  "Stateful Scene",
+    ACTION_HA_SCENE:        "HA Scene",
+    ACTION_AUTOMATION:      "Automation",
+    ACTION_SCRIPT:          "Script",
+    ACTION_ENTITY_TOGGLE:   "Entity Toggle",
+    ACTION_COVER_CYCLE:     "Cover Cycle",
+    ACTION_LIGHT_CYCLE_DIM: "Dim Cycle",
+    ACTION_RAISE:           "Raise",
+    ACTION_LOWER:           "Lower",
+    ACTION_NONE:            "None",
+}
+ACTION_LABEL_TO_TYPE: dict[str, str] = {v: k for k, v in ACTION_TYPE_LABELS.items()}
+
+# ── Per-keypad button layout ──────────────────────────────────────────────────
+# (main_button_count, has_raise_lower)
+KEYPAD_LAYOUTS: dict[str, tuple[int, bool]] = {
+    KEYPAD_SEETOUCH:        (6,  True),
+    KEYPAD_SEETOUCH_HYBRID: (5,  True),
+    KEYPAD_SUNNATA:         (4,  True),
+    KEYPAD_SUNNATA_HYBRID:  (3,  True),
+    KEYPAD_ALISEE:          (5,  True),
+    KEYPAD_PALLADIOM:       (5,  True),
+    KEYPAD_TABLETOP:        (10, False),
+    KEYPAD_PICO:            (3,  False),
+    KEYPAD_GENERIC:         (6,  True),
+}
+
+
+def get_button_list(keypad_type: str) -> list[dict]:
+    """Return ordered button descriptors for the given keypad type."""
+    main_count, has_rl = KEYPAD_LAYOUTS.get(keypad_type, KEYPAD_LAYOUTS[KEYPAD_GENERIC])
+    buttons = [
+        {"number": i, "is_raise": False, "is_lower": False}
+        for i in range(1, main_count + 1)
+    ]
+    if has_rl:
+        buttons.append({"number": main_count + 1, "is_raise": True,  "is_lower": False})
+        buttons.append({"number": main_count + 2, "is_raise": False, "is_lower": True})
+    return buttons
