@@ -39,9 +39,22 @@
   "options": {
     "step": {
       "init": {
-        "title": "Configure Buttons",
-        "description": "{fixed_buttons}",
-        "data": {}
+        "title": "Configure {name}",
+        "description": "Select a button to configure, or choose Save & Close when done.",
+        "data": {
+          "selected_button": "Button"
+        }
+      },
+      "button": {
+        "title": "Button {button_number} — {keypad_name}",
+        "description": "Configure the action for this button.",
+        "data": {
+          "label": "Button Label",
+          "action_type": "Action Type",
+          "action_target": "Target Entity",
+          "led_entity": "LED Indicator Entity",
+          "scene_group": "Scene Group Name"
+        }
       }
     }
   }
