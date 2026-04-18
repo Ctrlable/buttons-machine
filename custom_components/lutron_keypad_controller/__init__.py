@@ -215,11 +215,21 @@ def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
         }
         target = btn_data.get(CONF_ACTION_TARGET, "")
         if target:
-            # Parse comma-separated entity lists entered from the UI
-            if isinstance(target, str) and "," in target:
-                btn_cfg[CONF_ACTION_TARGET] = [t.strip() for t in target.split(",") if t.strip()]
+            # Normalize: options flow stores lists; multi-entity actions keep
+            # the list, single-entity actions get unwrapped to a plain string.
+            if isinstance(target, list):
+                flat = [t.strip() for t in target if str(t).strip()]
+            elif isinstance(target, str) and "," in target:
+                flat = [t.strip() for t in target.split(",") if t.strip()]
             else:
-                btn_cfg[CONF_ACTION_TARGET] = target
+                flat = [target] if target else []
+
+            if flat:
+                if action_type in (ACTION_STATEFUL_SCENE, ACTION_HA_SCENE,
+                                   ACTION_AUTOMATION, ACTION_SCRIPT):
+                    btn_cfg[CONF_ACTION_TARGET] = flat[0]
+                else:
+                    btn_cfg[CONF_ACTION_TARGET] = flat
         if btn_data.get(CONF_LED_ENTITY):
             btn_cfg[CONF_LED_ENTITY] = btn_data[CONF_LED_ENTITY]
         if btn_data.get("scene_group"):
@@ -284,6 +294,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN]["entry_controllers"][entry.entry_id] = ctrl
     hass.data[DOMAIN]["controllers"].append(ctrl)
+
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     await _cleanup_orphaned_entities(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -402,6 +414,13 @@ class LutronKeypadsController:
             return
 
         if not self._matches_event(data):
+            _LOGGER.debug(
+                "'%s': ignoring event (serial=%s, device=%s, area=%s) — "
+                "our serial=%s device=%s area=%s",
+                self.name,
+                data.get("serial"), data.get("device_name"), data.get("area_name"),
+                self.serial, self.device_name, self.area_name,
+            )
             return
 
         btn_num: int = int(data.get("button_number", -1))
