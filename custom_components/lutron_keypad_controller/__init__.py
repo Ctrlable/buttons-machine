@@ -258,8 +258,15 @@ async def _find_led_entities(
     serial    = str(config_entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
     device_id = str(config_entry.data.get("device_id", "")).strip()
 
+    _LOGGER.debug(
+        "LED discovery starting for '%s' — serial=%s device_id=%s",
+        config_entry.title, serial, device_id,
+    )
+
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
+
+    _LOGGER.debug("LED discovery: %d devices in registry", len(dev_reg.devices))
 
     # Find the lutron_caseta HA device that matches our keypad
     lutron_device = None
@@ -275,19 +282,36 @@ async def _find_led_entities(
             break
 
     if lutron_device is None:
-        _LOGGER.debug(
-            "LED auto-discovery: no lutron_caseta device found for serial=%s device_id=%s",
+        _LOGGER.warning(
+            "LED discovery: no lutron_caseta device matched serial=%s device_id=%s. "
+            "Dumping all device identifiers:",
             serial, device_id,
         )
+        for device in dev_reg.devices.values():
+            _LOGGER.warning(
+                "  Device '%s': identifiers=%s",
+                device.name, list(device.identifiers),
+            )
         return {}
 
+    all_entries = er.async_entries_for_device(ent_reg, lutron_device.id)
+    _LOGGER.debug(
+        "LED discovery: found lutron device '%s' (id=%s) with %d entities: %s",
+        lutron_device.name, lutron_device.id, len(all_entries),
+        [(e.entity_id, e.domain, e.unique_id) for e in all_entries],
+    )
+
     led_map: dict[int, str] = {}
-    for entry in er.async_entries_for_device(ent_reg, lutron_device.id):
+    for entry in all_entries:
         if entry.domain != "switch":
             continue
         haystack = " ".join(filter(None, [
             entry.name, entry.original_name, entry.unique_id
         ])).lower()
+        _LOGGER.debug(
+            "LED discovery: switch entity %s — haystack='%s'",
+            entry.entity_id, haystack,
+        )
         if "led" not in haystack:
             continue
         match = _re.search(r"button[_\s]+(\d+)[_\s]+led", haystack)
@@ -295,20 +319,110 @@ async def _find_led_entities(
             btn_num = int(match.group(1))
             led_map[btn_num] = entry.entity_id
             _LOGGER.debug(
-                "LED auto-discovery: button %d → %s", btn_num, entry.entity_id
+                "LED discovery: button %d → %s", btn_num, entry.entity_id
+            )
+        else:
+            _LOGGER.warning(
+                "LED discovery: '%s' contains 'led' but button number "
+                "regex did not match — haystack='%s'",
+                entry.entity_id, haystack,
             )
 
     if led_map:
         _LOGGER.info(
-            "LED auto-discovery for '%s': %s",
-            config_entry.title, led_map,
+            "LED discovery for '%s': %s", config_entry.title, led_map,
         )
     else:
-        _LOGGER.debug(
-            "LED auto-discovery for '%s': no LED entities found on device %s",
-            config_entry.title, lutron_device.id,
+        _LOGGER.warning(
+            "LED discovery for '%s': no LED entities mapped "
+            "(keypad_type=%s). "
+            "If your keypad has LEDs, configure led_entity manually in "
+            "the options flow, or check the debug_leds service output.",
+            config_entry.title,
+            config_entry.data.get("keypad_type"),
         )
     return led_map
+
+
+# ── Diagnostic service ────────────────────────────────────────────────────────
+
+async def _async_debug_leds(hass: HomeAssistant, call) -> None:
+    """Service: lutron_keypad_controller.debug_leds
+
+    Call from Developer Tools → Actions. Output appears in
+    Settings → System → Logs (search "LED DEBUG REPORT").
+    Also fires a lutron_keypad_controller_debug event.
+    """
+    lines: list[str] = []
+
+    entry_controllers: dict = (
+        hass.data.get(DOMAIN, {}).get("entry_controllers", {})
+    )
+    if not entry_controllers:
+        lines.append("No entry controllers found in hass.data — "
+                     "is the integration loaded?")
+
+    for entry_id, ctrl in entry_controllers.items():
+        lines.append(f"\n{'='*60}")
+        lines.append(f"Keypad : {ctrl.name}")
+        lines.append(f"Serial : {ctrl.serial}")
+        lines.append(f"device_id: {ctrl.device_id}")
+        lines.append(f"LED map (auto-discovered): {ctrl._led_map}")
+        lines.append(
+            f"Button switches registered: "
+            f"{list(ctrl._button_switches.keys())}"
+        )
+
+        for btn_num, btn_cfg in ctrl._buttons.items():
+            atype      = btn_cfg.get(CONF_ACTION_TYPE, "none")
+            manual_led = btn_cfg.get(CONF_LED_ENTITY, "")
+            auto_led   = ctrl._led_map.get(btn_num, "")
+            resolved   = manual_led or auto_led
+            lines.append(f"\n  Button {btn_num}  action={atype}")
+            lines.append(f"    manual led_entity : '{manual_led}'")
+            lines.append(f"    auto-discovered   : '{auto_led}'")
+            lines.append(f"    resolved LED      : '{resolved}'")
+            if resolved:
+                state = hass.states.get(resolved)
+                lines.append(
+                    f"    LED entity state  : "
+                    f"{state.state if state else '⚠ ENTITY NOT FOUND'}"
+                )
+            else:
+                lines.append("    ⚠ NO LED ENTITY — "
+                             "auto-discovery failed and no manual led_entity set")
+            sw = ctrl._button_switches.get(btn_num)
+            lines.append(
+                f"    HA switch state   : "
+                f"{'ON' if sw and sw.is_on else 'OFF'}"
+                f"{'' if sw else '  ⚠ switch entity not registered'}"
+            )
+
+    lines.append(f"\n{'='*60}")
+    lines.append("All switch entities with 'led' in entity_id:")
+    for state in hass.states.async_all("switch"):
+        if "led" in state.entity_id.lower():
+            lines.append(f"  {state.entity_id}: {state.state}")
+
+    lines.append("\nDevice registry — devices with 'lutron' identifiers:")
+    dev_reg = dr.async_get(hass)
+    for device in dev_reg.devices.values():
+        if any("lutron" in str(i).lower() for i in device.identifiers):
+            lines.append(f"  '{device.name}'  identifiers={list(device.identifiers)}")
+
+    lines.append("\nEntity registry — lutron_caseta switch entities:")
+    ent_reg = er.async_get(hass)
+    for entry in ent_reg.entities.values():
+        if entry.domain == "switch" and entry.platform == "lutron_caseta":
+            lines.append(
+                f"  {entry.entity_id}"
+                f"  unique_id={entry.unique_id}"
+                f"  device_id={entry.device_id}"
+            )
+
+    report = "\n".join(lines)
+    _LOGGER.warning("LED DEBUG REPORT:\n%s", report)
+    hass.bus.async_fire("lutron_keypad_controller_debug", {"report": report})
 
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
@@ -329,6 +443,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         ctrl.async_register()
 
     hass.data[DOMAIN]["controllers"] = controllers
+
+    hass.services.async_register(DOMAIN, "debug_leds", _async_debug_leds)
     return True
 
 
@@ -363,6 +479,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN]["entry_controllers"][entry.entry_id] = ctrl
     hass.data[DOMAIN]["controllers"].append(ctrl)
+
+    if not hass.services.has_service(DOMAIN, "debug_leds"):
+        hass.services.async_register(DOMAIN, "debug_leds", _async_debug_leds)
 
     # Populate LED map before platforms set up so switch entities can subscribe
     await ctrl.async_initialize()
@@ -489,15 +608,34 @@ class LutronKeypadsController:
 
     async def _sync_leds(self, active_btn: int | None) -> None:
         """Sync physical LEDs and HA switch states for all stateful_scene buttons."""
+        _LOGGER.debug("'%s': _sync_leds called, active_btn=%s", self.name, active_btn)
+        _LOGGER.debug("'%s': LED map: %s", self.name, self._led_map)
         for btn_num, btn_cfg in self._buttons.items():
             if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_STATEFUL_SCENE:
                 continue
             led_entity = self._get_led_entity(btn_num)
             should_be_on = (btn_num == active_btn)
+            _LOGGER.debug(
+                "'%s': Button %d LED entity='%s' should_be_on=%s",
+                self.name, btn_num, led_entity, should_be_on,
+            )
             if led_entity:
+                state = self.hass.states.get(led_entity)
+                _LOGGER.debug(
+                    "'%s': LED entity '%s' current state=%s",
+                    self.name, led_entity, state.state if state else "NOT FOUND",
+                )
                 service = SERVICE_TURN_ON if should_be_on else SERVICE_TURN_OFF
+                _LOGGER.debug(
+                    "'%s': Calling switch.%s on '%s'", self.name, service, led_entity
+                )
                 await self.hass.services.async_call(
-                    "switch", service, {ATTR_ENTITY_ID: led_entity}, blocking=False
+                    "switch", service, {ATTR_ENTITY_ID: led_entity}, blocking=True
+                )
+            else:
+                _LOGGER.warning(
+                    "'%s': Button %d has no LED entity — cannot sync physical LED",
+                    self.name, btn_num,
                 )
             self._update_button_switch_state(btn_num, should_be_on)
 
