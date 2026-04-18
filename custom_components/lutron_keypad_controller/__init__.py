@@ -96,7 +96,7 @@ from homeassistant.core import HomeAssistant, Event, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
-from homeassistant.helpers import entity_platform, entity_registry as er
+from homeassistant.helpers import entity_platform, entity_registry as er, device_registry as dr
 from homeassistant.const import (
     SERVICE_TURN_ON,
     SERVICE_TURN_OFF,
@@ -243,6 +243,74 @@ def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
 _SCENE_GROUPS: dict[str, int | None] = {}
 
 
+# ── LED entity auto-discovery ─────────────────────────────────────────────────
+
+import re as _re
+
+async def _find_led_entities(
+    hass: HomeAssistant, config_entry: ConfigEntry
+) -> dict[int, str]:
+    """Scan the entity registry for lutron_caseta LED switch entities.
+
+    Returns {button_number: entity_id}.  Manual led_entity config always
+    overrides this map; the map is only used as an auto-discovery fallback.
+    """
+    serial    = str(config_entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
+    device_id = str(config_entry.data.get("device_id", "")).strip()
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # Find the lutron_caseta HA device that matches our keypad
+    lutron_device = None
+    for device in dev_reg.devices.values():
+        for ident_domain, identifier in device.identifiers:
+            if ident_domain != "lutron_caseta":
+                continue
+            id_str = str(identifier).strip()
+            if (serial and id_str == serial) or (device_id and id_str == device_id):
+                lutron_device = device
+                break
+        if lutron_device:
+            break
+
+    if lutron_device is None:
+        _LOGGER.debug(
+            "LED auto-discovery: no lutron_caseta device found for serial=%s device_id=%s",
+            serial, device_id,
+        )
+        return {}
+
+    led_map: dict[int, str] = {}
+    for entry in er.async_entries_for_device(ent_reg, lutron_device.id):
+        if entry.domain != "switch":
+            continue
+        haystack = " ".join(filter(None, [
+            entry.name, entry.original_name, entry.unique_id
+        ])).lower()
+        if "led" not in haystack:
+            continue
+        match = _re.search(r"button[_\s]+(\d+)[_\s]+led", haystack)
+        if match:
+            btn_num = int(match.group(1))
+            led_map[btn_num] = entry.entity_id
+            _LOGGER.debug(
+                "LED auto-discovery: button %d → %s", btn_num, entry.entity_id
+            )
+
+    if led_map:
+        _LOGGER.info(
+            "LED auto-discovery for '%s': %s",
+            config_entry.title, led_map,
+        )
+    else:
+        _LOGGER.debug(
+            "LED auto-discovery for '%s': no LED entities found on device %s",
+            config_entry.title, lutron_device.id,
+        )
+    return led_map
+
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -282,7 +350,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_BUTTONS:       buttons_cfg,
     }
 
-    ctrl = LutronKeypadsController(hass, kp_cfg)
+    ctrl = LutronKeypadsController(hass, kp_cfg, config_entry=entry)
     if buttons_cfg:
         ctrl.async_register()
         _LOGGER.info("Keypad '%s' loaded from UI options with %d button(s)", entry.title, len(buttons_cfg))
@@ -295,6 +363,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN]["entry_controllers"][entry.entry_id] = ctrl
     hass.data[DOMAIN]["controllers"].append(ctrl)
+
+    # Populate LED map before platforms set up so switch entities can subscribe
+    await ctrl.async_initialize()
 
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
@@ -318,6 +389,10 @@ async def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) ->
         ):
             ent_reg.async_remove(reg_entry.entity_id)
             _LOGGER.info("Removed old text entity (now a sensor): %s", reg_entry.entity_id)
+        # v3.3.x _enabled switch replaced by _led switch
+        elif reg_entry.entity_id.startswith("switch.") and uid.endswith("_enabled"):
+            ent_reg.async_remove(reg_entry.entity_id)
+            _LOGGER.info("Removed old enabled-toggle switch (now LED switch): %s", reg_entry.entity_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -342,7 +417,12 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 class LutronKeypadsController:
     """Manages a single Lutron keypad and dispatches button events."""
 
-    def __init__(self, hass: HomeAssistant, config: dict) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config: dict,
+        config_entry: ConfigEntry | None = None,
+    ) -> None:
         self.hass = hass
         self.name: str = config["name"]
         self.serial: str = str(config.get(CONF_DEVICE_SERIAL, "")).strip()
@@ -351,6 +431,7 @@ class LutronKeypadsController:
         self.area_name: str = config.get(CONF_AREA_NAME, "").strip().lower()
         self.keypad_type: str = config.get(CONF_KEYPAD_TYPE, "generic")
         self.scene_group: str = config.get("scene_group", "").strip()
+        self._config_entry = config_entry
 
         # Index buttons by button_number
         self._buttons: dict[int, dict] = {}
@@ -358,11 +439,15 @@ class LutronKeypadsController:
             self._buttons[btn[CONF_BUTTON_NUMBER]] = btn
 
         # Per-controller runtime state
-        self._active_scene_btn: int | None = None   # stateful scene tracking
-        self._last_action: dict | None = None        # last non-raise/lower action
-        self._cover_states: dict[int, str] = {}     # cover cycle state per button
-        self._light_dim_indices: dict[int, int] = {}# dim level index per button
-        self._unsubscribe = None                     # event listener cancel handle
+        self._active_scene_btn: int | None = None
+        self._last_action: dict | None = None
+        self._cover_states: dict[int, str] = {}
+        self._light_dim_indices: dict[int, int] = {}
+        self._unsubscribe = None
+
+        # LED / switch entity tracking
+        self._led_map: dict[int, str] = {}       # btn_num → auto-discovered led entity_id
+        self._button_switches: dict[int, Any] = {}  # btn_num → LutronButtonSwitch
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -379,6 +464,42 @@ class LutronKeypadsController:
             self._unsubscribe()
             self._unsubscribe = None
             _LOGGER.debug("Lutron Keypad Controller '%s' unregistered", self.name)
+
+    # ── Initialization ────────────────────────────────────────────────────────
+
+    async def async_initialize(self) -> None:
+        """Discover LED entities from the lutron_caseta device registry."""
+        if self._config_entry is not None:
+            self._led_map = await _find_led_entities(self.hass, self._config_entry)
+
+    # ── LED helpers ───────────────────────────────────────────────────────────
+
+    def _get_led_entity(self, btn_num: int) -> str | None:
+        """Return LED entity for a button; manual config takes priority over auto-discovery."""
+        manual = self._buttons.get(btn_num, {}).get(CONF_LED_ENTITY, "")
+        return manual if manual else self._led_map.get(btn_num)
+
+    def register_button_switch(self, btn_num: int, switch: Any) -> None:
+        self._button_switches[btn_num] = switch
+
+    def _update_button_switch_state(self, btn_num: int, is_on: bool) -> None:
+        switch = self._button_switches.get(btn_num)
+        if switch is not None:
+            switch.update_led_state(is_on)
+
+    async def _sync_leds(self, active_btn: int | None) -> None:
+        """Sync physical LEDs and HA switch states for all stateful_scene buttons."""
+        for btn_num, btn_cfg in self._buttons.items():
+            if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_STATEFUL_SCENE:
+                continue
+            led_entity = self._get_led_entity(btn_num)
+            should_be_on = (btn_num == active_btn)
+            if led_entity:
+                service = SERVICE_TURN_ON if should_be_on else SERVICE_TURN_OFF
+                await self.hass.services.async_call(
+                    "switch", service, {ATTR_ENTITY_ID: led_entity}, blocking=False
+                )
+            self._update_button_switch_state(btn_num, should_be_on)
 
     # ── Event matching ────────────────────────────────────────────────────────
 
@@ -526,46 +647,22 @@ class LutronKeypadsController:
         self, btn_num: int, btn_cfg: dict, scene_id: str
     ) -> None:
         """Activate an HA scene and update stateful tracking + LEDs."""
-        # 1. Activate the scene
         await self._activate_scene(scene_id)
 
-        # 2. Update intra-keypad active scene
-        prev_btn = self._active_scene_btn
         self._active_scene_btn = btn_num
 
-        # 3. Update shared scene group if defined (per-button setting takes priority)
         group = btn_cfg.get("scene_group") or self.scene_group
         if group:
             _SCENE_GROUPS[group] = btn_num
 
-        # 4. Update LEDs: turn off previous, turn on new
-        await self._update_leds(prev_btn, btn_num)
+        await self._sync_leds(btn_num)
 
-        # 5. Record last non-raise/lower action for raise/lower context
         self._last_action = {
             "type": ACTION_STATEFUL_SCENE,
             "scene_id": scene_id,
             "button": btn_num,
         }
         _LOGGER.debug("Stateful scene '%s' activated on btn %d", scene_id, btn_num)
-
-    async def _update_leds(self, deactivate_btn: int | None, activate_btn: int | None) -> None:
-        """Toggle LED entities for a stateful scene transition."""
-        if deactivate_btn is not None:
-            old_btn_cfg = self._buttons.get(deactivate_btn, {})
-            led = old_btn_cfg.get(CONF_LED_ENTITY)
-            if led:
-                await self.hass.services.async_call(
-                    "switch", SERVICE_TURN_OFF, {ATTR_ENTITY_ID: led}, blocking=False
-                )
-
-        if activate_btn is not None:
-            new_btn_cfg = self._buttons.get(activate_btn, {})
-            led = new_btn_cfg.get(CONF_LED_ENTITY)
-            if led:
-                await self.hass.services.async_call(
-                    "switch", SERVICE_TURN_ON, {ATTR_ENTITY_ID: led}, blocking=False
-                )
 
     async def _trigger_automation(self, automation_id: str) -> None:
         """Trigger an HA automation."""
