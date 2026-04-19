@@ -68,6 +68,7 @@ class LutronButtonSwitch(SwitchEntity):
         self._is_raise = is_raise
         self._is_lower = is_lower
         self._led_state: bool = False
+        self._led_entity: str | None = None   # set in async_added_to_hass if discovered
         self._attr_unique_id = f"{entry.entry_id}_button_{btn_number}_led"
 
     # ── Identity ──────────────────────────────────────────────────────────────
@@ -124,23 +125,20 @@ class LutronButtonSwitch(SwitchEntity):
             return
 
         ctrl.register_button_switch(self._btn_number, self)
-        _LOGGER.debug(
-            "Button %d registered with controller '%s'",
-            self._btn_number, ctrl.name,
-        )
 
         led_entity = ctrl._get_led_entity(self._btn_number)
         if led_entity:
+            self._led_entity = led_entity
             # Seed initial state from physical LED
             state = self.hass.states.get(led_entity)
             if state is not None:
                 self._led_state = state.state == "on"
                 _LOGGER.debug(
-                    "Button %d: seeded initial state from '%s' → %s",
+                    "Button %d: seeded from '%s' → %s",
                     self._btn_number, led_entity, self._led_state,
                 )
 
-            # Track physical LED changes passively (read-only — we do not write to it)
+            # Track physical LED changes — this is the SOLE state driver when bound
             self.async_on_remove(
                 async_track_state_change_event(
                     self.hass,
@@ -149,8 +147,13 @@ class LutronButtonSwitch(SwitchEntity):
                 )
             )
             _LOGGER.debug(
-                "Button %d: tracking physical LED entity '%s'",
+                "Button %d: bound to LED entity '%s'",
                 self._btn_number, led_entity,
+            )
+        else:
+            _LOGGER.debug(
+                "Button %d: no LED entity found — state driven by controller tracking",
+                self._btn_number,
             )
 
     @callback
@@ -183,15 +186,16 @@ class LutronButtonSwitch(SwitchEntity):
         btn_cfg = ctrl._buttons.get(self._btn_number)
         if btn_cfg is None:
             _LOGGER.debug(
-                "Button %d: no action configured (action will be ignored)",
+                "Button %d: no action configured",
                 self._btn_number,
             )
             return
 
-        # Set state ON immediately so HA UI confirms the change without flickering.
-        # _sync_leds will also call update_led_state after the dispatch completes.
-        self._led_state = True
-        self.async_write_ha_state()
+        if not self._led_entity:
+            # No LED entity binding — set optimistic ON now; _sync_leds will
+            # correct all stateful_scene buttons after dispatch completes.
+            self._led_state = True
+            self.async_write_ha_state()
 
         try:
             await ctrl._dispatch(self._btn_number, btn_cfg)
