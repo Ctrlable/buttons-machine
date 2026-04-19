@@ -186,6 +186,7 @@ def _detect_button_layout(
     keypad_type: str,
     device_name: str = "",
     area_name: str = "",
+    device_id: str = "",
 ) -> dict:
     """Query bridge.button_devices for the actual buttons on this device.
 
@@ -199,19 +200,24 @@ def _detect_button_layout(
 
     button_devices: dict = getattr(bridge, "button_devices", None) or {}
     if not button_devices:
-        _LOGGER.warning(
-            "bridge.button_devices not available for serial %s; using fallback button count",
-            serial,
+        _LOGGER.debug(
+            "bridge.button_devices not available for serial=%s device_id=%s "
+            "(expected for CASETA Pro); using keypad-type button count",
+            serial, device_id,
         )
         return {}
 
+    # Match by serial (RA3/QSX) or by device_id (LEAP) — whichever the bridge uses
     matching = [
         bd for bd in button_devices.values()
-        if str(bd.get("serial", "")) == serial
+        if (serial and str(bd.get("serial", "")) == serial)
+        or (device_id and str(bd.get("device_id", "")) == device_id)
     ]
     if not matching:
-        _LOGGER.warning(
-            "No button_devices matched serial %s; using fallback button count", serial
+        _LOGGER.debug(
+            "No button_devices matched serial=%s device_id=%s; "
+            "using keypad-type button count",
+            serial, device_id,
         )
         return {}
 
@@ -304,6 +310,7 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self.hass, serial, ktype,
                     device_name=self._selected_device.get("name", ""),
                     area_name=self._selected_device.get("area_name", ""),
+                    device_id=str(self._selected_device.get("device_id", "")),
                 )
                 return await self.async_step_confirm()
 

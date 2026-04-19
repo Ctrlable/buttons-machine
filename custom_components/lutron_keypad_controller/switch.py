@@ -1,10 +1,15 @@
-"""Switch platform — per-button LED state indicators.
+"""Switch platform — per-button active-scene indicators.
 
-State ON  = LED is lit on the physical keypad.
-State OFF = LED is off.
+State ON  = this button's scene is the currently active scene.
+State OFF = a different scene is active (or none).
 
 Turning ON  → triggers the button's configured action (same as a physical press).
-Turning OFF → extinguishes the physical LED only; does not trigger any action.
+Turning OFF → no-op (another button's scene must be activated to change state).
+
+State is driven exclusively by LutronKeypadsController._sync_leds, which is
+called on every button press (physical or via this switch).  The physical
+Lutron LEDs are managed by the bridge as part of scene activation and do not
+need to be written to from HA.
 """
 from __future__ import annotations
 
@@ -13,10 +18,9 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     DOMAIN,
@@ -118,28 +122,12 @@ class LutronButtonSwitch(SwitchEntity):
 
         ctrl.register_button_switch(self._btn_number, self)
 
+        # Restore initial state from physical LED entity (read-only at startup)
         led_entity = ctrl._get_led_entity(self._btn_number)
         if led_entity:
-            # Restore state from physical LED on startup
             state = self.hass.states.get(led_entity)
             if state is not None:
                 self._led_state = state.state == "on"
-
-            # Stay in sync with physical LED changes from any source
-            self.async_on_remove(
-                async_track_state_change_event(
-                    self.hass,
-                    [led_entity],
-                    self._handle_led_state_change,
-                )
-            )
-
-    @callback
-    def _handle_led_state_change(self, event: Any) -> None:
-        new_state = event.data.get("new_state")
-        if new_state is not None:
-            self._led_state = new_state.state == "on"
-            self.async_write_ha_state()
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -156,12 +144,5 @@ class LutronButtonSwitch(SwitchEntity):
         await ctrl._dispatch(self._btn_number, btn_cfg)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Extinguish this button's physical LED; does not trigger any action."""
-        ctrl = self._get_controller()
-        led_entity = ctrl._get_led_entity(self._btn_number) if ctrl else None
-        if led_entity:
-            await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": led_entity}, blocking=False
-            )
-        self._led_state = False
-        self.async_write_ha_state()
+        """No-op — scene state is only cleared by activating another scene."""
+        pass

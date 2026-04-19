@@ -763,16 +763,15 @@ class LutronKeypadsController:
             self.hass, self._config_entry
         )
         if not self._led_map:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "'%s': button-entity LED discovery found nothing — trying registry scan",
                 self.name,
             )
             self._led_map = await _find_led_entities(self.hass, self._config_entry)
         if not self._led_map:
-            _LOGGER.warning(
-                "'%s': no LED entities found by any method. "
-                "Configure led_entity manually in the options flow, "
-                "or call the debug_leds service to diagnose.",
+            _LOGGER.debug(
+                "'%s': no LED entities found (expected for CASETA Pro keypads "
+                "without LED feedback). Call debug_leds service to diagnose.",
                 self.name,
             )
 
@@ -792,36 +791,21 @@ class LutronKeypadsController:
             switch.update_led_state(is_on)
 
     async def _sync_leds(self, active_btn: int | None) -> None:
-        """Sync physical LEDs and HA switch states for all stateful_scene buttons."""
+        """Update HA switch states for all stateful_scene buttons.
+
+        Physical LEDs are managed by the Lutron bridge as a side-effect of
+        scene activation (scene.turn_on already sends the LEAP command).
+        Writing back to the LED switch entities here would fight the bridge
+        and cause the HA switch to toggle ON→OFF immediately.
+        """
         _LOGGER.debug("'%s': _sync_leds called, active_btn=%s", self.name, active_btn)
-        _LOGGER.debug("'%s': LED map: %s", self.name, self._led_map)
         for btn_num, btn_cfg in self._buttons.items():
             if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_STATEFUL_SCENE:
                 continue
-            led_entity = self._get_led_entity(btn_num)
             should_be_on = (btn_num == active_btn)
             _LOGGER.debug(
-                "'%s': Button %d LED entity='%s' should_be_on=%s",
-                self.name, btn_num, led_entity, should_be_on,
+                "'%s': Button %d should_be_on=%s", self.name, btn_num, should_be_on
             )
-            if led_entity:
-                state = self.hass.states.get(led_entity)
-                _LOGGER.debug(
-                    "'%s': LED entity '%s' current state=%s",
-                    self.name, led_entity, state.state if state else "NOT FOUND",
-                )
-                service = SERVICE_TURN_ON if should_be_on else SERVICE_TURN_OFF
-                _LOGGER.debug(
-                    "'%s': Calling switch.%s on '%s'", self.name, service, led_entity
-                )
-                await self.hass.services.async_call(
-                    "switch", service, {ATTR_ENTITY_ID: led_entity}, blocking=True
-                )
-            else:
-                _LOGGER.warning(
-                    "'%s': Button %d has no LED entity — cannot sync physical LED",
-                    self.name, btn_num,
-                )
             self._update_button_switch_state(btn_num, should_be_on)
 
     # ── Event matching ────────────────────────────────────────────────────────
