@@ -857,7 +857,8 @@ class LutronKeypadsController:
         self._release_counts: dict[int, int] = {}               # btn_num → releases since last press
         self._fake_release_events: dict[int, asyncio.Event] = {}  # set when Lutron fake-release fires
         self._actual_release_events: dict[int, asyncio.Event] = {} # set on real button lift
-        self._ramp_dirs:   dict[int, str] = {}                  # btn_num → last ramp direction
+        self._ramp_dirs:      dict[int, str] = {}                # btn_num → last ramp direction
+        self._ramp_end_times: dict[int, float] = {}             # btn_num → time last ramp ended
 
         # Sensors to notify when _last_action changes
         self._state_sensors: list = []
@@ -884,6 +885,7 @@ class LutronKeypadsController:
         self._release_counts.clear()
         self._fake_release_events.clear()
         self._actual_release_events.clear()
+        self._ramp_end_times.clear()
 
     # ── Initialization ────────────────────────────────────────────────────────
 
@@ -1093,7 +1095,19 @@ class LutronKeypadsController:
             btn_cfg[CONF_ACTION_TYPE],
         )
 
-        self.hass.async_create_task(self._handle_press(btn_num, btn_cfg))
+        # Create release-detection events SYNCHRONOUSLY here — _handle_release is a
+        # @callback that can fire before the async task below gets its first turn on
+        # the event loop.  If events were created inside the task, they wouldn't exist
+        # yet when Lutron's fake release arrives (typically within 10–50 ms of press).
+        old_task = self._press_tasks.pop(btn_num, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+        self._press_times[btn_num]          = asyncio.get_event_loop().time()
+        self._release_counts[btn_num]       = 0
+        self._fake_release_events[btn_num]  = asyncio.Event()
+        self._actual_release_events[btn_num] = asyncio.Event()
+        task = self.hass.async_create_task(self._handle_press(btn_num, btn_cfg))
+        self._press_tasks[btn_num] = task
 
     # ── Press / release / hold-to-ramp ───────────────────────────────────────
     #
@@ -1140,25 +1154,15 @@ class LutronKeypadsController:
 
     async def _handle_press(self, btn_num: int, btn_cfg: dict) -> None:
         """Route a press event: short press → dispatch, hold → ramp."""
-        # Cancel any stale handler from a previous press on this button
-        old = self._press_tasks.pop(btn_num, None)
-        if old and not old.done():
-            old.cancel()
-
-        self._press_tasks[btn_num] = asyncio.current_task()
-        self._press_times[btn_num] = asyncio.get_event_loop().time()
-        self._release_counts[btn_num] = 0
-
-        fake_ev   = asyncio.Event()
-        actual_ev = asyncio.Event()
-        self._fake_release_events[btn_num]   = fake_ev
-        self._actual_release_events[btn_num] = actual_ev
+        # Events were created synchronously in _handle_event before this task started.
+        fake_ev   = self._fake_release_events.get(btn_num)
+        actual_ev = self._actual_release_events.get(btn_num)
 
         action = btn_cfg.get(CONF_ACTION_TYPE)
         hold_actions = {ACTION_ENTITY_TOGGLE, ACTION_STATEFUL_SCENE, ACTION_RAISE, ACTION_LOWER}
 
         try:
-            if action not in hold_actions:
+            if action not in hold_actions or fake_ev is None or actual_ev is None:
                 await self._dispatch(btn_num, btn_cfg)
                 return
 
@@ -1206,6 +1210,7 @@ class LutronKeypadsController:
 
             # ── Ramp until actual release fires ──────────────────────────────
             await self._ramp_loop(btn_num, entities, direction, actual_ev)
+            self._ramp_end_times[btn_num] = asyncio.get_event_loop().time()
 
         except asyncio.CancelledError:
             pass
@@ -1273,10 +1278,23 @@ class LutronKeypadsController:
 
     # ── Ramp helpers ──────────────────────────────────────────────────────────
 
+    _RAMP_DIR_RESET_WINDOW = 2.0  # seconds — gap longer than this resets direction to "up"
+
     def _next_ramp_dir(self, btn_num: int) -> str:
-        """Alternate ramp direction on each hold: first=up, then down, then up…"""
-        last = self._ramp_dirs.get(btn_num, "down")
-        direction = "up" if last == "down" else "down"
+        """Return next ramp direction.
+
+        Always starts "up" on the first hold (or after a 2s gap since the last
+        ramp ended).  Alternates to "down" on a follow-up hold within 2s, then
+        back to "up", and so on — so the user can nudge brightness up/down by
+        repeated press-and-holds without losing track of direction.
+        """
+        now = asyncio.get_event_loop().time()
+        last_end = self._ramp_end_times.get(btn_num)
+        if last_end is None or (now - last_end) > self._RAMP_DIR_RESET_WINDOW:
+            direction = "up"
+        else:
+            last_dir = self._ramp_dirs.get(btn_num, "down")
+            direction = "up" if last_dir == "down" else "down"
         self._ramp_dirs[btn_num] = direction
         return direction
 
