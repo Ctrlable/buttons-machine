@@ -19,6 +19,7 @@ CONF_ACTION_TYPE     = "action_type"
 CONF_ACTION_TARGET   = "action_target"
 CONF_ACTION_PARAMS   = "action_params"
 CONF_LED_ENTITY      = "led_entity"
+CONF_LED_INVERT      = "led_invert"
 
 # ── Keypad models ─────────────────────────────────────────────────────────────
 KEYPAD_SEETOUCH          = "seetouch"

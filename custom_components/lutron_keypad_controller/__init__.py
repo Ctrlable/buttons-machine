@@ -114,6 +114,7 @@ from .const import (
     CONF_ACTION_TARGET,
     CONF_ACTION_PARAMS,
     CONF_LED_ENTITY,
+    CONF_LED_INVERT,
     CONF_DEVICE_SERIAL,
     CONF_DEVICE_NAME,
     CONF_AREA_NAME,
@@ -235,6 +236,8 @@ def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
                     btn_cfg[CONF_ACTION_TARGET] = flat
         if btn_data.get(CONF_LED_ENTITY):
             btn_cfg[CONF_LED_ENTITY] = btn_data[CONF_LED_ENTITY]
+        if btn_data.get(CONF_LED_INVERT):
+            btn_cfg[CONF_LED_INVERT] = True
         if btn_data.get("scene_group"):
             btn_cfg["scene_group"] = btn_data["scene_group"]
         result.append(btn_cfg)
@@ -910,6 +913,9 @@ class LutronKeypadsController:
     async def _write_led_entity(self, btn_num: int, is_on: bool) -> None:
         """Write ON/OFF to the physical LED switch entity bound to this button.
 
+        Respects the per-button ``led_invert`` flag — when True the logical
+        on/off is flipped before writing (useful for "lights off" indicators).
+
         This both lights up the physical Lutron keypad LED and triggers
         _handle_led_state_change in switch.py which mirrors the state to our
         HA button switch.  No-op when no LED entity is bound.
@@ -917,6 +923,9 @@ class LutronKeypadsController:
         led_entity = self._get_led_entity(btn_num)
         if not led_entity:
             return
+        btn_cfg = self._buttons.get(btn_num, {})
+        if btn_cfg.get(CONF_LED_INVERT, False):
+            is_on = not is_on
         service = SERVICE_TURN_ON if is_on else SERVICE_TURN_OFF
         try:
             await self.hass.services.async_call(
@@ -1084,15 +1093,18 @@ class LutronKeypadsController:
             await self._write_led_entity(btn_num, True)
 
         elif action == ACTION_ENTITY_TOGGLE:
-            await self._entity_toggle(target)
-            # Reflect the toggled entity's new state on the LED
+            # Read state BEFORE toggling — HA state propagation is async even
+            # with blocking=True, so reading after the call returns the old value.
+            # Inverting the pre-toggle state gives the correct post-toggle state.
             entity_ids = _normalize_targets(target)
+            pre_on = False
             if entity_ids:
-                state = self.hass.states.get(entity_ids[0])
-                is_on = state is not None and state.state not in (
+                pre_state = self.hass.states.get(entity_ids[0])
+                pre_on = pre_state is not None and pre_state.state not in (
                     "off", "closed", "unavailable", "unknown", "none"
                 )
-                await self._write_led_entity(btn_num, is_on)
+            await self._entity_toggle(target)
+            await self._write_led_entity(btn_num, not pre_on)
 
         elif action == ACTION_COVER_CYCLE:
             await self._cover_cycle(btn_num, target)

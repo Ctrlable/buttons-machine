@@ -21,6 +21,7 @@ from .const import (
     CONF_ACTION_TYPE,
     CONF_ACTION_TARGET,
     CONF_LED_ENTITY,
+    CONF_LED_INVERT,
     ACTION_STATEFUL_SCENE,
     KEYPAD_SEETOUCH,
     KEYPAD_SEETOUCH_HYBRID,
@@ -613,6 +614,7 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
                     (raw if isinstance(raw, list) else self._normalize_target(raw))
                     if multiple else raw
                 )
+                self._buttons_config[n][CONF_LED_INVERT] = bool(user_input.get(f"button_{n}_led_invert", False))
                 if action_type == ACTION_STATEFUL_SCENE:
                     self._buttons_config[n][CONF_LED_ENTITY] = user_input.get(f"button_{n}_led", "")
                     sg = user_input.get(f"button_{n}_scene_group", "")
@@ -641,6 +643,9 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
                 schema_dict[vol.Optional(f"button_{n}_scene_group", default=cfg.get("scene_group", ""))] = (
                     selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT))
                 )
+            schema_dict[vol.Optional(f"button_{n}_led_invert", default=cfg.get(CONF_LED_INVERT, False))] = (
+                selector.BooleanSelector()
+            )
 
         return self.async_show_form(
             step_id="entities",
