@@ -206,5 +206,36 @@ class LutronButtonSwitch(SwitchEntity):
             )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """No-op — scene state is only cleared by activating a different scene."""
-        pass
+        """Turn off: for toggle actions re-dispatch (same as a physical press).
+
+        For stateful_scene / ha_scene / automation / script the switch is a
+        read-only indicator — turning it off has no meaning, so we just
+        write the current state back to stop the HA UI from bouncing.
+        """
+        from .const import ACTION_ENTITY_TOGGLE, CONF_ACTION_TYPE
+
+        ctrl = self._get_controller()
+        if ctrl is None:
+            self.async_write_ha_state()
+            return
+
+        btn_cfg = ctrl._buttons.get(self._btn_number)
+        if btn_cfg is None:
+            self.async_write_ha_state()
+            return
+
+        if btn_cfg.get(CONF_ACTION_TYPE) == ACTION_ENTITY_TOGGLE:
+            # Toggle: pressing again should turn the entity off — re-dispatch.
+            if not self._led_entity:
+                self._led_state = False
+                self.async_write_ha_state()
+            try:
+                await ctrl._dispatch(self._btn_number, btn_cfg)
+            except Exception as exc:
+                _LOGGER.error(
+                    "Button %d: dispatch raised an exception: %s",
+                    self._btn_number, exc,
+                )
+        else:
+            # For all other action types: reject the turn-off and hold current state.
+            self.async_write_ha_state()
