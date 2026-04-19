@@ -138,6 +138,7 @@ from .const import (
     ATTR_COVER_STATES,
     ATTR_LIGHT_DIM_STEPS,
     get_button_layout,
+    get_button_list,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -761,40 +762,48 @@ def _normalize_led_map(
     raw_led_map: dict[int, str],
     config_entry: ConfigEntry,
 ) -> dict[int, str]:
-    """Ensure LED map keys match the button numbers the controller uses.
+    """Remap LED map keys to match the sequential button numbers used by events and options.
 
-    Discovery extracts LEAP button IDs from entity unique_ids (e.g. 5376, 5380 …).
-    If the config entry stored these same IDs in ``button_numbers`` (bridge
-    detection succeeded at setup time) the keys already match.
+    Events fire with a device-local sequential ``leap_button_number`` (e.g. 1, 2, 3 …).
+    LED discovery extracts LEAP *global component IDs* from entity unique_ids
+    (e.g. 5376, 5380 …).  These are different number spaces.
 
-    If the config entry uses sequential fallback numbers (1-N) because bridge
-    detection failed at setup time, remap by sort order: smallest LEAP ID →
-    button 1, next → button 2, etc.  This works because Lutron assigns LEAP IDs
-    in physical button order within a device.
+    ``get_button_list`` always returns sequential 1-N regardless of bridge
+    detection — that is the number space events and the options flow use.
+    ``get_button_layout`` uses bridge-detected IDs when available; those IDs
+    match the raw_led_map keys when bridge detection succeeded.
+
+    Remapping strategy: sort both sets by value and zip them positionally.
+    Lutron assigns global component IDs in physical button order within a device,
+    so ascending sort order preserves physical position.
     """
     if not raw_led_map:
         return raw_led_map
 
-    layout = get_button_layout(config_entry.data)
-    layout_numbers = {b["number"] for b in layout}
+    entry_data = config_entry.data
+    # Sequential layout is what events use (local leap_button_number 1, 2, 3 …)
+    seq_layout = get_button_list(entry_data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC))
+    seq_numbers = {b["number"] for b in seq_layout}
 
-    # Fast path: keys already match
-    if any(k in layout_numbers for k in raw_led_map):
+    # Fast path: keys are already sequential (no remap needed)
+    if any(k in seq_numbers for k in raw_led_map):
         return raw_led_map
 
-    # LEAP IDs don't match layout numbers → remap by ascending sort order
-    configurable = sorted(
-        b["number"] for b in layout
+    # Keys are LEAP global component IDs — remap by ascending sort order
+    # (raise/lower buttons don't have LED entities so exclude them as targets)
+    configurable_seq = sorted(
+        b["number"] for b in seq_layout
         if not b["is_raise"] and not b["is_lower"]
     )
     sorted_leap = sorted(raw_led_map.keys())
 
     remapped: dict[int, str] = {}
-    for btn_num, leap_id in zip(configurable, sorted_leap):
+    for btn_num, leap_id in zip(configurable_seq, sorted_leap):
         remapped[btn_num] = raw_led_map[leap_id]
 
     _LOGGER.info(
-        "LED map: LEAP IDs %s remapped to button numbers %s",
+        "'%s': LED map: LEAP global IDs %s → sequential button numbers %s",
+        config_entry.title,
         sorted_leap,
         list(remapped.keys()),
     )
@@ -871,6 +880,10 @@ class LutronKeypadsController:
             raw_map = await _find_led_entities(self.hass, self._config_entry)
         if raw_map:
             self._led_map = _normalize_led_map(raw_map, self._config_entry)
+            _LOGGER.warning(
+                "'%s': LED map ready (keys = sequential button numbers): %s",
+                self.name, self._led_map,
+            )
         else:
             _LOGGER.debug(
                 "'%s': no LED entities found (expected for CASETA Pro keypads "
