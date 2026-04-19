@@ -466,6 +466,22 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
             return ""
         return f"{', '.join(parts)} are fixed raise/lower buttons and cannot be reassigned."
 
+    def _get_led_bindings_note(self) -> str:
+        """Return a markdown block listing auto-discovered LED bindings, or ''."""
+        ctrl = (
+            self.hass.data.get(DOMAIN, {})
+            .get("entry_controllers", {})
+            .get(self.config_entry.entry_id)
+        )
+        if ctrl is None or not ctrl._led_map:
+            return ""
+        button_names: dict[str, str] = self.config_entry.data.get("button_names", {})
+        lines = ["\n\n**Auto-discovered LED bindings:**"]
+        for btn_num in sorted(ctrl._led_map):
+            label = button_names.get(str(btn_num), f"Button {btn_num}")
+            lines.append(f"- {label} (#{btn_num}) → `{ctrl._led_map[btn_num]}`")
+        return "\n".join(lines)
+
     def _normalize_target(self, target: Any) -> list[str]:
         if isinstance(target, list):
             return [str(e).strip() for e in target if str(e).strip()]
@@ -558,6 +574,7 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={
                 "keypad_name":      keypad_name,
                 "raise_lower_note": self._get_raise_lower_note(),
+                "led_bindings":     self._get_led_bindings_note(),
             },
         )
 
@@ -621,5 +638,8 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="entities",
             data_schema=vol.Schema(schema_dict),
-            description_placeholders={"keypad_name": keypad_name},
+            description_placeholders={
+                "keypad_name":  keypad_name,
+                "led_bindings": self._get_led_bindings_note(),
+            },
         )

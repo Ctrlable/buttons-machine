@@ -40,7 +40,7 @@
     "step": {
       "buttons": {
         "title": "Configure All Buttons — {keypad_name}",
-        "description": "Set a label and action type for each button. {raise_lower_note}",
+        "description": "Set a label and action type for each button. {raise_lower_note}{led_bindings}",
         "data": {
           "button_1_label": "Button 1 Label",
           "button_1_action_type": "Button 1 Action",
@@ -66,7 +66,7 @@
       },
       "entities": {
         "title": "Assign Entities — {keypad_name}",
-        "description": "Select the target entity for each active button.",
+        "description": "Select the target entity for each active button. Leave the LED Switch field empty to use the auto-discovered binding.{led_bindings}",
         "data": {
           "button_1_entity": "Button 1 Entity",
           "button_1_led": "Button 1 LED Switch",
