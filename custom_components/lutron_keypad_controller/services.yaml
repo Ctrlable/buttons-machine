@@ -1,0 +1,7 @@
+debug_leds:
+  name: Debug LED State
+  description: >
+    Dumps a full LED diagnostic report to the HA log (search for
+    "LED DEBUG REPORT") and fires a lutron_keypad_controller_debug event.
+    Call from Developer Tools → Actions to diagnose LED sync issues.
+  fields: {}
