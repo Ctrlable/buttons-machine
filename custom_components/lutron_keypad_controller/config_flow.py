@@ -169,12 +169,29 @@ def _resolve_btn_num(bd: dict) -> int | None:
     return None
 
 
-def _detect_button_layout(hass: HomeAssistant, serial: str, keypad_type: str) -> dict:
+def _strip_engraving(full_name: str, area: str, device: str) -> str:
+    """Strip area/device prefix from a Lutron button name to get the engraving."""
+    name = full_name.strip()
+    for prefix in [f"{area} {device}", device, area]:
+        prefix = prefix.strip()
+        if prefix and name.lower().startswith(prefix.lower()):
+            name = name[len(prefix):].strip()
+            break
+    return name.title() if name else full_name.strip()
+
+
+def _detect_button_layout(
+    hass: HomeAssistant,
+    serial: str,
+    keypad_type: str,
+    device_name: str = "",
+    area_name: str = "",
+) -> dict:
     """Query bridge.button_devices for the actual buttons on this device.
 
     Returns a dict with button_numbers / configurable_buttons / raise_button /
-    lower_button to be stored in config entry data.  Returns {} on failure so
-    the caller falls back to the family-based count.
+    lower_button / button_names to be stored in config entry data.
+    Returns {} on failure so the caller falls back to the family-based count.
     """
     bridge = _get_lutron_bridge(hass)
     if bridge is None:
@@ -207,27 +224,34 @@ def _detect_button_layout(hass: HomeAssistant, serial: str, keypad_type: str) ->
 
     raise_btn: int | None = None
     lower_btn: int | None = None
+    button_names: dict[str, str] = {}  # str(btn_num) → engraving label
+
     for bd in matching:
-        name = bd.get("name", "").lower()
+        raw_name = bd.get("name", "")
+        name_lc  = raw_name.lower()
         bnum = _resolve_btn_num(bd)
         if bnum is None:
             continue
-        if name.endswith((" raise", "-raise", " up", "-up")):
+        if name_lc.endswith((" raise", "-raise", " up", "-up")):
             raise_btn = bnum
-        elif name.endswith((" lower", "-lower", " down", "-down")):
+        elif name_lc.endswith((" lower", "-lower", " down", "-down")):
             lower_btn = bnum
+        engraving = _strip_engraving(raw_name, area_name, device_name)
+        if engraving:
+            button_names[str(bnum)] = engraving
 
     configurable = [n for n in button_numbers if n not in (raise_btn, lower_btn)]
 
     _LOGGER.debug(
-        "Detected %d button(s) for serial %s: configurable=%s raise=%s lower=%s",
-        len(button_numbers), serial, configurable, raise_btn, lower_btn,
+        "Detected %d button(s) for serial %s: configurable=%s raise=%s lower=%s names=%s",
+        len(button_numbers), serial, configurable, raise_btn, lower_btn, button_names,
     )
     return {
-        "button_numbers":      button_numbers,
+        "button_numbers":       button_numbers,
         "configurable_buttons": configurable,
-        "raise_button":        raise_btn,
-        "lower_button":        lower_btn,
+        "raise_button":         raise_btn,
+        "lower_button":         lower_btn,
+        "button_names":         button_names,
     }
 
 
@@ -276,7 +300,11 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Detect actual button layout from bridge
                 serial      = str(self._selected_device.get("serial", ""))
                 ktype       = _infer_keypad_type(self._selected_device.get("type", ""))
-                self._detected_layout = _detect_button_layout(self.hass, serial, ktype)
+                self._detected_layout = _detect_button_layout(
+                    self.hass, serial, ktype,
+                    device_name=self._selected_device.get("name", ""),
+                    area_name=self._selected_device.get("area_name", ""),
+                )
                 return await self.async_step_confirm()
 
         return self.async_show_form(
@@ -501,17 +529,19 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
                 data={"buttons": {str(k): v for k, v in self._buttons_config.items()}},
             )
 
+        button_names: dict[str, str] = self.config_entry.data.get("button_names", {})
         schema_dict: dict = {}
         for btn in configurable:
             n = btn["number"]
             cfg = self._buttons_config.get(n, {})
-            schema_dict[vol.Optional(f"button_{n}_label", default=cfg.get("label", f"Button {n}"))] = (
+            engraving = button_names.get(str(n), f"Button {n}")
+            schema_dict[vol.Optional(f"button_{n}_label", default=cfg.get("label") or engraving)] = (
                 selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT))
             )
             schema_dict[vol.Required(f"button_{n}_action_type", default=cfg.get(CONF_ACTION_TYPE, ACTION_NONE))] = (
                 selector.SelectSelector(selector.SelectSelectorConfig(
                     options=_ACTION_OPTIONS,
-                    mode=selector.SelectSelectorMode.LIST,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 ))
             )
 

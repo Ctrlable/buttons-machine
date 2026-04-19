@@ -344,6 +344,175 @@ async def _find_led_entities(
     return led_map
 
 
+# ── LED auto-discovery via button entity naming convention ────────────────────
+
+def _extract_button_number(btn_entry: Any, hass: HomeAssistant) -> int | None:
+    """Extract the leap_button_number from a lutron_caseta button entity.
+
+    lutron_caseta unique_id format is typically "<serial>_<leap_button_number>",
+    e.g. "20603964_2" → 2.  Several fallback strategies are tried.
+    """
+    unique_id = btn_entry.unique_id or ""
+    entity_id = btn_entry.entity_id or ""
+
+    _LOGGER.debug(
+        "LED: extracting button number — unique_id='%s' entity_id='%s'",
+        unique_id, entity_id,
+    )
+
+    # Strategy 1: unique_id ends with _<number>  (most common: serial_leapbtn)
+    m = _re.search(r"_(\d+)$", unique_id)
+    if m:
+        return int(m.group(1))
+
+    # Strategy 2: unique_id contains "button_<number>"
+    m = _re.search(r"button[_\s](\d+)", unique_id.lower())
+    if m:
+        return int(m.group(1))
+
+    # Strategy 3: entity state attributes
+    state = hass.states.get(entity_id)
+    if state:
+        for key in ("button_number", "leap_button_number", "button_index"):
+            val = state.attributes.get(key)
+            if val is not None:
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    pass
+
+    # Strategy 4: last number anywhere in unique_id
+    nums = _re.findall(r"\d+", unique_id)
+    if nums:
+        return int(nums[-1])
+
+    return None
+
+
+async def _find_led_entities_by_button_entities(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+) -> dict[int, str]:
+    """Find LED switches using the lutron_caseta entity naming convention.
+
+    lutron_caseta creates paired entities for each button:
+      button.<area>_<keypad>_<engraving>
+      switch.<area>_<keypad>_<engraving>_led
+
+    We enumerate the button entities for our device, derive the expected LED
+    entity_id by swapping the domain and appending ``_led``, then verify it
+    exists.  The button number is extracted from the button entity's unique_id.
+    """
+    serial          = str(config_entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
+    device_id_stored = str(config_entry.data.get("device_id", "")).strip()
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # ── Locate the lutron_caseta HA device ─────────────────────────────────
+    lutron_device = None
+    for device in dev_reg.devices.values():
+        for ident_tuple in device.identifiers:
+            ident_domain = ident_tuple[0]
+            identifier   = str(ident_tuple[1]) if len(ident_tuple) > 1 else ""
+            if ident_domain == "lutron_caseta" and identifier in (serial, device_id_stored):
+                lutron_device = device
+                break
+        if lutron_device:
+            break
+
+    if lutron_device is None:
+        _LOGGER.warning(
+            "LED (button-entity): no lutron_caseta device matched "
+            "serial=%s device_id=%s — trying name fallback",
+            serial, device_id_stored,
+        )
+        device_name = config_entry.data.get(CONF_DEVICE_NAME, "").lower()
+        for device in dev_reg.devices.values():
+            if (device.name and device_name and
+                    device_name in device.name.lower() and
+                    any(t[0] == "lutron_caseta" for t in device.identifiers)):
+                lutron_device = device
+                break
+
+    if lutron_device is None:
+        _LOGGER.warning(
+            "LED (button-entity): device not found — LED sync unavailable"
+        )
+        return {}
+
+    _LOGGER.debug(
+        "LED (button-entity): found device '%s' (id=%s)",
+        lutron_device.name, lutron_device.id,
+    )
+
+    all_entries = er.async_entries_for_device(ent_reg, lutron_device.id)
+    _LOGGER.debug(
+        "LED (button-entity): %d entities on device: %s",
+        len(all_entries),
+        [(e.entity_id, e.domain) for e in all_entries],
+    )
+
+    button_entries = [
+        e for e in all_entries
+        if e.domain == "button" and e.platform == "lutron_caseta"
+    ]
+    led_entries = [
+        e for e in all_entries
+        if e.domain == "switch" and e.entity_id.endswith("_led")
+        and e.platform == "lutron_caseta"
+    ]
+
+    _LOGGER.debug(
+        "LED (button-entity): %d button entities, %d LED switch entities",
+        len(button_entries), len(led_entries),
+    )
+
+    led_entity_ids = {e.entity_id for e in led_entries}
+    led_map: dict[int, str] = {}
+
+    for btn_entry in button_entries:
+        base         = btn_entry.entity_id[len("button."):]
+        expected_led = f"switch.{base}_led"
+        if expected_led not in led_entity_ids:
+            _LOGGER.debug(
+                "LED (button-entity): no LED for '%s' (tried '%s')",
+                btn_entry.entity_id, expected_led,
+            )
+            continue
+        btn_num = _extract_button_number(btn_entry, hass)
+        if btn_num is not None:
+            led_map[btn_num] = expected_led
+            _LOGGER.debug(
+                "LED map: button %d → '%s'", btn_num, expected_led
+            )
+        else:
+            _LOGGER.debug(
+                "LED (button-entity): could not extract number from '%s' (uid=%s)",
+                btn_entry.entity_id, btn_entry.unique_id,
+            )
+
+    # Positional fallback: sort both lists and zip by index
+    if not led_map and button_entries and led_entries:
+        _LOGGER.warning(
+            "LED (button-entity): name-match empty — trying positional fallback"
+        )
+        for btn_e, led_e in zip(
+            sorted(button_entries, key=lambda e: e.entity_id),
+            sorted(led_entries,    key=lambda e: e.entity_id),
+        ):
+            btn_num = _extract_button_number(btn_e, hass)
+            if btn_num is not None:
+                led_map[btn_num] = led_e.entity_id
+
+    if led_map:
+        _LOGGER.info(
+            "LED (button-entity) discovery for '%s': %s",
+            config_entry.title, led_map,
+        )
+    return led_map
+
+
 # ── Diagnostic service ────────────────────────────────────────────────────────
 
 async def _async_debug_leds(hass: HomeAssistant, call) -> None:
@@ -587,9 +756,25 @@ class LutronKeypadsController:
     # ── Initialization ────────────────────────────────────────────────────────
 
     async def async_initialize(self) -> None:
-        """Discover LED entities from the lutron_caseta device registry."""
-        if self._config_entry is not None:
+        """Discover LED entities — button-entity method first, registry scan as fallback."""
+        if self._config_entry is None:
+            return
+        self._led_map = await _find_led_entities_by_button_entities(
+            self.hass, self._config_entry
+        )
+        if not self._led_map:
+            _LOGGER.warning(
+                "'%s': button-entity LED discovery found nothing — trying registry scan",
+                self.name,
+            )
             self._led_map = await _find_led_entities(self.hass, self._config_entry)
+        if not self._led_map:
+            _LOGGER.warning(
+                "'%s': no LED entities found by any method. "
+                "Configure led_entity manually in the options flow, "
+                "or call the debug_leds service to diagnose.",
+                self.name,
+            )
 
     # ── LED helpers ───────────────────────────────────────────────────────────
 
