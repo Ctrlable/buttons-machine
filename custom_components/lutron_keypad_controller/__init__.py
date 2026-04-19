@@ -907,20 +907,56 @@ class LutronKeypadsController:
         if switch is not None:
             switch.update_led_state(is_on)
 
+    async def _write_led_entity(self, btn_num: int, is_on: bool) -> None:
+        """Write ON/OFF to the physical LED switch entity bound to this button.
+
+        This both lights up the physical Lutron keypad LED and triggers
+        _handle_led_state_change in switch.py which mirrors the state to our
+        HA button switch.  No-op when no LED entity is bound.
+        """
+        led_entity = self._get_led_entity(btn_num)
+        if not led_entity:
+            return
+        service = SERVICE_TURN_ON if is_on else SERVICE_TURN_OFF
+        try:
+            await self.hass.services.async_call(
+                "switch", service, {ATTR_ENTITY_ID: led_entity}, blocking=True
+            )
+            _LOGGER.debug(
+                "'%s': button %d LED '%s' → %s",
+                self.name, btn_num, led_entity, "ON" if is_on else "OFF",
+            )
+        except Exception as exc:
+            _LOGGER.warning(
+                "'%s': button %d could not write LED entity '%s': %s",
+                self.name, btn_num, led_entity, exc,
+            )
+
+    async def _write_group_leds(self, active_btn: int, active_btn_cfg: dict) -> None:
+        """For stateful_scene buttons: turn ON active button's LED, OFF all others in group."""
+        group = active_btn_cfg.get("scene_group") or self.scene_group
+        for btn_num, btn_cfg in self._buttons.items():
+            if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_STATEFUL_SCENE:
+                continue
+            if not self._get_led_entity(btn_num):
+                continue  # no LED entity bound; _sync_leds handles HA switch state
+            btn_group = btn_cfg.get("scene_group") or self.scene_group
+            if group and btn_group != group:
+                continue
+            await self._write_led_entity(btn_num, btn_num == active_btn)
+
     async def _sync_leds(self, active_btn: int | None) -> None:
         """Update HA switch states for stateful_scene buttons that have no LED entity.
 
-        Buttons that have a physical LED entity binding are intentionally
-        skipped — their state is driven exclusively by _handle_led_state_change
-        in switch.py.  Touching those here would create a race between the
-        controller's scene-tracking and the physical LED's state change event.
+        Buttons that have a physical LED entity binding are skipped — their state
+        is driven by _handle_led_state_change after _write_group_leds writes to
+        the physical LED.
         """
         _LOGGER.debug("'%s': _sync_leds called, active_btn=%s", self.name, active_btn)
         for btn_num, btn_cfg in self._buttons.items():
             if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_STATEFUL_SCENE:
                 continue
             if self._get_led_entity(btn_num):
-                # Physical LED entity is bound — _handle_led_state_change drives state
                 continue
             should_be_on = (btn_num == active_btn)
             _LOGGER.debug(
@@ -1033,18 +1069,30 @@ class LutronKeypadsController:
 
         elif action == ACTION_HA_SCENE:
             await self._activate_scene(target)
+            await self._write_led_entity(btn_num, True)
 
         elif action == ACTION_STATEFUL_SCENE:
+            # LED writes handled inside _activate_stateful_scene
             await self._activate_stateful_scene(btn_num, btn_cfg, target)
 
         elif action == ACTION_AUTOMATION:
             await self._trigger_automation(target)
+            await self._write_led_entity(btn_num, True)
 
         elif action == ACTION_SCRIPT:
             await self._run_script(target, params)
+            await self._write_led_entity(btn_num, True)
 
         elif action == ACTION_ENTITY_TOGGLE:
             await self._entity_toggle(target)
+            # Reflect the toggled entity's new state on the LED
+            entity_ids = _normalize_targets(target)
+            if entity_ids:
+                state = self.hass.states.get(entity_ids[0])
+                is_on = state is not None and state.state not in (
+                    "off", "closed", "unavailable", "unknown", "none"
+                )
+                await self._write_led_entity(btn_num, is_on)
 
         elif action == ACTION_COVER_CYCLE:
             await self._cover_cycle(btn_num, target)
@@ -1083,7 +1131,10 @@ class LutronKeypadsController:
         if group:
             _SCENE_GROUPS[group] = btn_num
 
+        # Buttons without LED entity binding: update HA switch state directly
         await self._sync_leds(btn_num)
+        # Buttons with LED entity binding: write to physical LED (triggers _handle_led_state_change)
+        await self._write_group_leds(btn_num, btn_cfg)
 
         self._last_action = {
             "type": ACTION_STATEFUL_SCENE,
