@@ -852,8 +852,12 @@ class LutronKeypadsController:
         self._button_switches: dict[int, Any] = {}  # btn_num → LutronButtonSwitch
 
         # Press-and-hold tracking
-        self._press_tasks: dict[int, asyncio.Task] = {}  # btn_num → pending press task
-        self._ramp_dirs:   dict[int, str] = {}           # btn_num → last ramp direction
+        self._press_tasks: dict[int, asyncio.Task] = {}         # btn_num → active press handler task
+        self._press_times: dict[int, float] = {}                # btn_num → monotonic time of last press
+        self._release_counts: dict[int, int] = {}               # btn_num → releases since last press
+        self._fake_release_events: dict[int, asyncio.Event] = {}  # set when Lutron fake-release fires
+        self._actual_release_events: dict[int, asyncio.Event] = {} # set on real button lift
+        self._ramp_dirs:   dict[int, str] = {}                  # btn_num → last ramp direction
 
         # Sensors to notify when _last_action changes
         self._state_sensors: list = []
@@ -876,6 +880,10 @@ class LutronKeypadsController:
         for task in self._press_tasks.values():
             task.cancel()
         self._press_tasks.clear()
+        self._press_times.clear()
+        self._release_counts.clear()
+        self._fake_release_events.clear()
+        self._actual_release_events.clear()
 
     # ── Initialization ────────────────────────────────────────────────────────
 
@@ -1088,133 +1096,180 @@ class LutronKeypadsController:
         self.hass.async_create_task(self._handle_press(btn_num, btn_cfg))
 
     # ── Press / release / hold-to-ramp ───────────────────────────────────────
+    #
+    # Lutron RA3/QSX quirk: a fake "release" event is fired immediately after
+    # every "press" (~10–50 ms), even while the button is still held.  If the
+    # button is actually held, a second "release" fires on the real lift.
+    #
+    # Event sequences:
+    #   short tap : press → release¹  (only one release)
+    #   hold      : press → release¹ (fake, fast) → release² (actual lift)
+    #
+    # Strategy:
+    #   1. On press  — create asyncio Events for fake/actual release; start handler task.
+    #   2. On release — if it arrived within _FAKE_RELEASE_WINDOW of press, signal
+    #                   fake_ev; otherwise (or if it is the 2nd release) signal actual_ev.
+    #   3. Handler task — waits for fake_ev (confirms still-holding after instant pair),
+    #                     then waits for actual_ev vs _HOLD_THRESHOLD to choose
+    #                     short-press dispatch vs ramp.  Ramp stops when actual_ev fires.
 
-    _HOLD_THRESHOLD = 0.25   # seconds before a press becomes a hold
-    _RAMP_STEP_PCT  = 4      # brightness % per ramp tick
-    _RAMP_INTERVAL  = 0.15   # seconds between ticks
+    _FAKE_RELEASE_WINDOW = 0.12   # seconds — releases within this are Lutron's fake
+    _HOLD_THRESHOLD      = 0.25   # seconds of hold before entering ramp
+    _RAMP_STEP_PCT       = 4      # brightness % per ramp tick
+    _RAMP_INTERVAL       = 0.15   # seconds between ticks
 
     @callback
     def _handle_release(self, btn_num: int) -> None:
-        """Cancel the pending press task on button release."""
-        task = self._press_tasks.pop(btn_num, None)
-        if task and not task.done():
-            task.cancel()
+        loop_time = asyncio.get_event_loop().time()
+        press_time = self._press_times.get(btn_num, loop_time)
+        elapsed = loop_time - press_time
+
+        count = self._release_counts.get(btn_num, 0) + 1
+        self._release_counts[btn_num] = count
+
+        if count == 1 and elapsed <= self._FAKE_RELEASE_WINDOW:
+            # Lutron's fake release — button is still held (probably)
+            ev = self._fake_release_events.get(btn_num)
+            if ev is not None:
+                ev.set()
+        else:
+            # Real lift: slow first release, or second release after fake
+            ev = self._actual_release_events.get(btn_num)
+            if ev is not None:
+                ev.set()
 
     async def _handle_press(self, btn_num: int, btn_cfg: dict) -> None:
         """Route a press event: short press → dispatch, hold → ramp."""
-        # Cancel any stale task from a previous press on this button
+        # Cancel any stale handler from a previous press on this button
         old = self._press_tasks.pop(btn_num, None)
         if old and not old.done():
             old.cancel()
 
+        self._press_tasks[btn_num] = asyncio.current_task()
+        self._press_times[btn_num] = asyncio.get_event_loop().time()
+        self._release_counts[btn_num] = 0
+
+        fake_ev   = asyncio.Event()
+        actual_ev = asyncio.Event()
+        self._fake_release_events[btn_num]   = fake_ev
+        self._actual_release_events[btn_num] = actual_ev
+
         action = btn_cfg.get(CONF_ACTION_TYPE)
         hold_actions = {ACTION_ENTITY_TOGGLE, ACTION_STATEFUL_SCENE, ACTION_RAISE, ACTION_LOWER}
 
-        if action not in hold_actions:
-            await self._dispatch(btn_num, btn_cfg)
-            return
-
-        # Register this task so _handle_release can cancel it
-        self._press_tasks[btn_num] = asyncio.current_task()
-
-        # ── Wait for hold threshold ──────────────────────────────────────────
-        held = True
         try:
-            await asyncio.sleep(self._HOLD_THRESHOLD)
-        except asyncio.CancelledError:
-            held = False
-
-        if not held:
-            # Released before threshold → short press
-            self._press_tasks.pop(btn_num, None)
-            await self._dispatch(btn_num, btn_cfg)
-            return
-
-        # ── Hold detected — determine ramp parameters ────────────────────────
-        if action == ACTION_RAISE:
-            direction = "up"
-            entities = self._get_last_ramp_lights()
-        elif action == ACTION_LOWER:
-            direction = "down"
-            entities = self._get_last_ramp_lights()
-        else:
-            # entity_toggle / stateful_scene: only ramp when LED is currently ON
-            if not self._is_btn_led_on(btn_num):
-                self._press_tasks.pop(btn_num, None)
+            if action not in hold_actions:
                 await self._dispatch(btn_num, btn_cfg)
                 return
-            entities = self._get_btn_light_entities(btn_cfg)
-            direction = self._next_ramp_dir(btn_num)
 
-        if not entities:
-            # No rampable lights — fall back to normal dispatch
-            self._press_tasks.pop(btn_num, None)
-            await self._dispatch(btn_num, btn_cfg)
-            return
+            # ── Wait for Lutron's fake release ───────────────────────────────
+            # If it doesn't arrive within the window, this is an unusual keypad
+            # that sends a real (slow) release — treat it as a short press.
+            try:
+                await asyncio.wait_for(fake_ev.wait(), timeout=self._FAKE_RELEASE_WINDOW + 0.05)
+            except asyncio.TimeoutError:
+                await self._dispatch(btn_num, btn_cfg)
+                return
 
-        _LOGGER.debug(
-            "'%s': button %d HOLD — ramp %s on %s",
-            self.name, btn_num, direction, entities,
-        )
+            # ── Fake release seen — wait for actual release vs hold threshold ─
+            try:
+                await asyncio.wait_for(actual_ev.wait(), timeout=self._HOLD_THRESHOLD)
+                # Actual release arrived before threshold → short press
+                await self._dispatch(btn_num, btn_cfg)
+                return
+            except asyncio.TimeoutError:
+                pass  # hold threshold reached — continue to ramp
 
-        # ── Ramp loop (runs until task cancelled by release) ─────────────────
-        try:
-            await self._ramp_loop(btn_num, entities, direction)
+            # ── Hold detected — determine ramp direction and targets ──────────
+            if action == ACTION_RAISE:
+                direction = "up"
+                entities  = self._get_last_ramp_lights()
+            elif action == ACTION_LOWER:
+                direction = "down"
+                entities  = self._get_last_ramp_lights()
+            else:
+                # entity_toggle / stateful_scene: only ramp when LED is ON
+                if not self._is_btn_led_on(btn_num):
+                    await self._dispatch(btn_num, btn_cfg)
+                    return
+                entities  = self._get_btn_light_entities(btn_cfg)
+                direction = self._next_ramp_dir(btn_num)
+
+            if not entities:
+                await self._dispatch(btn_num, btn_cfg)
+                return
+
+            _LOGGER.debug(
+                "'%s': button %d HOLD — ramp %s on %s",
+                self.name, btn_num, direction, entities,
+            )
+
+            # ── Ramp until actual release fires ──────────────────────────────
+            await self._ramp_loop(btn_num, entities, direction, actual_ev)
+
         except asyncio.CancelledError:
             pass
         finally:
             self._press_tasks.pop(btn_num, None)
+            self._fake_release_events.pop(btn_num, None)
+            self._actual_release_events.pop(btn_num, None)
 
     async def _ramp_loop(
-        self, btn_num: int, entities: list[str], direction: str
+        self,
+        btn_num: int,
+        entities: list[str],
+        direction: str,
+        stop_ev: asyncio.Event,
     ) -> None:
-        """Continuously step brightness up/down until cancelled."""
-        try:
-            while True:
-                all_at_limit = True
-                for eid in entities:
-                    state = self.hass.states.get(eid)
-                    if state is None:
-                        continue
-                    if state.state == "off":
-                        if direction == "up":
-                            await self.hass.services.async_call(
-                                "light", SERVICE_TURN_ON,
-                                {ATTR_ENTITY_ID: eid, "brightness_pct": 1},
-                                blocking=False,
-                            )
-                            all_at_limit = False
-                        continue
-                    current_pct = round(
-                        (state.attributes.get("brightness", 0) or 0) / 255 * 100
-                    )
+        """Step brightness up/down until stop_ev is set or limits are reached."""
+        while not stop_ev.is_set():
+            all_at_limit = True
+            for eid in entities:
+                state = self.hass.states.get(eid)
+                if state is None:
+                    continue
+                if state.state == "off":
                     if direction == "up":
-                        new_pct = min(100, current_pct + self._RAMP_STEP_PCT)
-                    else:
-                        new_pct = max(0, current_pct - self._RAMP_STEP_PCT)
-                    if new_pct == current_pct:
-                        continue
-                    all_at_limit = False
-                    if direction == "down" and new_pct <= 0:
-                        await self.hass.services.async_call(
-                            "light", SERVICE_TURN_OFF,
-                            {ATTR_ENTITY_ID: eid}, blocking=False,
-                        )
-                    else:
                         await self.hass.services.async_call(
                             "light", SERVICE_TURN_ON,
-                            {
-                                ATTR_ENTITY_ID: eid,
-                                "brightness_pct": new_pct,
-                                "transition": self._RAMP_INTERVAL,
-                            },
+                            {ATTR_ENTITY_ID: eid, "brightness_pct": 1},
                             blocking=False,
                         )
-                if all_at_limit:
-                    break
-                await asyncio.sleep(self._RAMP_INTERVAL)
-        except asyncio.CancelledError:
-            raise
+                        all_at_limit = False
+                    continue
+                current_pct = round(
+                    (state.attributes.get("brightness", 0) or 0) / 255 * 100
+                )
+                if direction == "up":
+                    new_pct = min(100, current_pct + self._RAMP_STEP_PCT)
+                else:
+                    new_pct = max(0, current_pct - self._RAMP_STEP_PCT)
+                if new_pct == current_pct:
+                    continue
+                all_at_limit = False
+                if direction == "down" and new_pct <= 0:
+                    await self.hass.services.async_call(
+                        "light", SERVICE_TURN_OFF,
+                        {ATTR_ENTITY_ID: eid}, blocking=False,
+                    )
+                else:
+                    await self.hass.services.async_call(
+                        "light", SERVICE_TURN_ON,
+                        {
+                            ATTR_ENTITY_ID: eid,
+                            "brightness_pct": new_pct,
+                            "transition": self._RAMP_INTERVAL,
+                        },
+                        blocking=False,
+                    )
+            if all_at_limit:
+                break
+            # Sleep for the ramp interval, but wake immediately if stop_ev fires
+            try:
+                await asyncio.wait_for(stop_ev.wait(), timeout=self._RAMP_INTERVAL)
+                break  # stop_ev fired during sleep
+            except asyncio.TimeoutError:
+                pass
 
     # ── Ramp helpers ──────────────────────────────────────────────────────────
 
