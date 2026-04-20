@@ -1101,30 +1101,26 @@ class LutronKeypadsController:
 
     # ── Press / release / hold event ─────────────────────────────────────────
     #
-    # Lutron RA3/QSX behaviour:
-    #   tap  : press → release¹ (<50 ms, fake) → release² (~50–150 ms, real lift)
-    #   hold : press → release¹ (<50 ms, fake) → [finger still down] → release² (on lift)
+    # Hardware reality: some Lutron bridges send an automatic "fake" release
+    # (~10–25 ms) on every press while the finger is still down; others send
+    # only ONE release when the finger actually lifts.  We handle both:
     #
-    # State machine (all synchronous @callbacks — no asyncio races):
+    #   PRESS    → arm hold timer (_HOLD_CONFIRM ms from press).
+    #              Non-hold actions dispatch immediately.
     #
-    #   PRESS       → cancel stale state; record time; for non-hold actions dispatch immediately.
-    #                 For hold-capable actions: wait for fake release.
+    #   RELEASE  → elapsed < _FAKE_WINDOW (25 ms): Lutron fake — ignore.
+    #            → _held (ramp running): stop ramp.
+    #            → else (real lift before timer): cancel timer → TAP → dispatch.
     #
-    #   RELEASE¹    → elapsed < _FAKE_WINDOW (25 ms): it's Lutron's hardware fake.
-    #                 Start _HOLD_CONFIRM (300 ms) timer via call_later.
-    #               → elapsed ≥ _FAKE_WINDOW: real finger lift → TAP: dispatch immediately.
+    #   _on_hold_event fires (_HOLD_CONFIRM ms after press, no release yet):
+    #              HOLD: start ramp (or dispatch if LED is off / no rampable lights).
+    #              Next hold within 2 s alternates ramp direction.
     #
-    #   RELEASE²    → arrives while confirm timer is running → TAP: cancel timer, dispatch.
-    #               → arrives while ramp/_held is active → RAMP STOP: cancel ramp task.
-    #
-    #   _on_hold_event fires (confirm timer expires, no real release) → HOLD EVENT:
-    #                 start ramp task; next hold within 2s alternates direction.
-    #
-    # NOTE: Lutron's automatic fake release is consistently < 20 ms.  A finger lift
-    # takes ≥ 30 ms even for the quickest human taps, so 25 ms cleanly separates them.
+    # _HOLD_CONFIRM must exceed the user's natural quick-tap duration.
+    # Observed tap release times on this hardware: ~440 ms → 600 ms gives margin.
 
-    _FAKE_WINDOW   = 0.025  # seconds — releases within this are Lutron's hardware fake
-    _HOLD_CONFIRM  = 0.30   # seconds after fake release before hold event fires
+    _FAKE_WINDOW   = 0.025  # seconds — releases within this window are Lutron fakes
+    _HOLD_CONFIRM  = 0.60   # seconds after PRESS before hold event fires
     _RAMP_STEP_PCT = 4      # brightness % per ramp tick
     _RAMP_INTERVAL = 0.15   # seconds between ticks
 
@@ -1135,7 +1131,6 @@ class LutronKeypadsController:
     @callback
     def _on_press(self, btn_num: int, btn_cfg: dict) -> None:
         """Synchronous press handler."""
-        # Cancel any stale confirm timer or ramp from a previous interaction
         old_confirm = self._confirm_handles.pop(btn_num, None)
         if old_confirm is not None:
             old_confirm.cancel()
@@ -1147,9 +1142,15 @@ class LutronKeypadsController:
         self._release_counts[btn_num] = 0
         self._held[btn_num]           = False
 
-        if btn_cfg.get(CONF_ACTION_TYPE) not in self._HOLD_ACTIONS:
-            # Non-hold action: dispatch immediately on press, no gesture detection needed
+        action = btn_cfg.get(CONF_ACTION_TYPE)
+        if action not in self._HOLD_ACTIONS:
             self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
+        else:
+            # Arm hold timer starting from press — fires if finger is still down
+            handle = self.hass.loop.call_later(
+                self._HOLD_CONFIRM, self._on_hold_event, btn_num,
+            )
+            self._confirm_handles[btn_num] = handle
 
     @callback
     def _handle_release(self, btn_num: int) -> None:
@@ -1165,6 +1166,10 @@ class LutronKeypadsController:
             self._held.get(btn_num), btn_num in self._confirm_handles,
         )
 
+        # ── Lutron hardware fake (~10–25 ms) — ignore ────────────────────────
+        if elapsed < self._FAKE_WINDOW:
+            return
+
         # ── Ramp is active: this release stops it ────────────────────────────
         if self._held.get(btn_num, False):
             ramp = self._ramp_tasks.pop(btn_num, None)
@@ -1174,23 +1179,10 @@ class LutronKeypadsController:
             self._ramp_end_times[btn_num] = now
             return
 
-        # ── Fake release: start hold-confirm window ──────────────────────────
-        if count == 1 and elapsed < self._FAKE_WINDOW:
-            btn_cfg = self._buttons.get(btn_num)
-            if btn_cfg is not None and btn_cfg.get(CONF_ACTION_TYPE) in self._HOLD_ACTIONS:
-                handle = self.hass.loop.call_later(
-                    self._HOLD_CONFIRM,
-                    self._on_hold_event,
-                    btn_num,
-                )
-                self._confirm_handles[btn_num] = handle
-            return
-
-        # ── Real release: either confirms tap or is a late sole release ───────
+        # ── Real lift before hold timer fires → TAP ──────────────────────────
         confirm = self._confirm_handles.pop(btn_num, None)
         if confirm is not None:
             confirm.cancel()
-        # Dispatch tap for hold-capable actions (non-hold actions already dispatched on press)
         btn_cfg = self._buttons.get(btn_num)
         if btn_cfg is not None and btn_cfg.get(CONF_ACTION_TYPE) in self._HOLD_ACTIONS:
             self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
