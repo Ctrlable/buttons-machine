@@ -894,6 +894,26 @@ class LutronKeypadsController:
 
     # ── Initialization ────────────────────────────────────────────────────────
 
+    def _get_lutron_bridge(self):
+        """Return the pylutron-caseta bridge object, trying all known storage locations."""
+        from homeassistant.config_entries import ConfigEntryState
+        for entry in self.hass.config_entries.async_entries("lutron_caseta"):
+            if entry.state is not ConfigEntryState.LOADED:
+                continue
+            runtime = getattr(entry, "runtime_data", None)
+            if runtime is not None:
+                bridge = getattr(runtime, "bridge", None)
+                if bridge is not None:
+                    return bridge
+            entry_data = self.hass.data.get("lutron_caseta", {}).get(entry.entry_id)
+            if entry_data is not None:
+                bridge = getattr(entry_data, "bridge", None)
+                if bridge is None and isinstance(entry_data, dict):
+                    bridge = entry_data.get("bridge")
+                if bridge is not None:
+                    return bridge
+        return None
+
     async def _build_leap_btn_map(self) -> None:
         """Map LEAP button numbers (used in events) to configured button numbers.
 
@@ -901,22 +921,27 @@ class LutronKeypadsController:
         LEAP events fire with leap_button_number (e.g. 18).  Without this map
         the event handler looks up btn_num=18, finds nothing, and ignores the press.
         """
-        lutron_data = self.hass.data.get("lutron_caseta", {})
-        bridge = None
-        for entry_data in lutron_data.values():
-            b = entry_data.get("bridge")
-            if b is not None:
-                bridge = b
-                break
+        bridge = self._get_lutron_bridge()
         if bridge is None:
+            _LOGGER.debug("'%s': _build_leap_btn_map — lutron_caseta bridge not found", self.name)
             return
 
         button_devices: dict = getattr(bridge, "button_devices", None) or {}
+        if not button_devices:
+            _LOGGER.debug(
+                "'%s': _build_leap_btn_map — bridge has no button_devices "
+                "(expected for Caseta Pro; raise/lower remapping not available)",
+                self.name,
+            )
+            return
+
+        matched = 0
         for bd in button_devices.values():
             bd_serial    = str(bd.get("serial", ""))
             bd_device_id = str(bd.get("device_id", ""))
             if bd_serial != self.serial and bd_device_id != self.device_id:
                 continue
+            matched += 1
             # Canonical number — same priority as _detect_button_layout
             canonical = None
             for key in ("button_number", "leap_button_number"):
@@ -934,8 +959,10 @@ class LutronKeypadsController:
                 except (TypeError, ValueError):
                     pass
 
-        if self._leap_btn_map:
-            _LOGGER.debug("'%s': LEAP→btn map: %s", self.name, self._leap_btn_map)
+        _LOGGER.debug(
+            "'%s': _build_leap_btn_map — matched %d button_devices entries, map=%s",
+            self.name, matched, self._leap_btn_map,
+        )
 
     async def async_initialize(self) -> None:
         """Discover LED entities — button-entity method first, registry scan as fallback."""
