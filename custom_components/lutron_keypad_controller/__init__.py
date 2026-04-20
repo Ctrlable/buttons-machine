@@ -850,6 +850,9 @@ class LutronKeypadsController:
         # LED / switch entity tracking
         self._led_map: dict[int, str] = {}       # btn_num → auto-discovered led entity_id
         self._button_switches: dict[int, Any] = {}  # btn_num → LutronButtonSwitch
+        # LEAP button number → configured button number
+        # Events use leap_button_number; config stores button_number (can differ for raise/lower)
+        self._leap_btn_map: dict[int, int] = {}
 
         # Press-and-hold tracking (synchronous call_later state machine)
         self._press_times:     dict[int, float] = {}  # monotonic time of last press
@@ -891,10 +894,54 @@ class LutronKeypadsController:
 
     # ── Initialization ────────────────────────────────────────────────────────
 
+    async def _build_leap_btn_map(self) -> None:
+        """Map LEAP button numbers (used in events) to configured button numbers.
+
+        button_devices stores the canonical button_number (e.g. 7 for raise).
+        LEAP events fire with leap_button_number (e.g. 18).  Without this map
+        the event handler looks up btn_num=18, finds nothing, and ignores the press.
+        """
+        lutron_data = self.hass.data.get("lutron_caseta", {})
+        bridge = None
+        for entry_data in lutron_data.values():
+            b = entry_data.get("bridge")
+            if b is not None:
+                bridge = b
+                break
+        if bridge is None:
+            return
+
+        button_devices: dict = getattr(bridge, "button_devices", None) or {}
+        for bd in button_devices.values():
+            bd_serial    = str(bd.get("serial", ""))
+            bd_device_id = str(bd.get("device_id", ""))
+            if bd_serial != self.serial and bd_device_id != self.device_id:
+                continue
+            # Canonical number — same priority as _detect_button_layout
+            canonical = None
+            for key in ("button_number", "leap_button_number"):
+                raw = bd.get(key)
+                if raw is not None:
+                    try:
+                        canonical = int(raw)
+                        break
+                    except (TypeError, ValueError):
+                        pass
+            leap_raw = bd.get("leap_button_number")
+            if canonical is not None and leap_raw is not None:
+                try:
+                    self._leap_btn_map[int(leap_raw)] = canonical
+                except (TypeError, ValueError):
+                    pass
+
+        if self._leap_btn_map:
+            _LOGGER.debug("'%s': LEAP→btn map: %s", self.name, self._leap_btn_map)
+
     async def async_initialize(self) -> None:
         """Discover LED entities — button-entity method first, registry scan as fallback."""
         if self._config_entry is None:
             return
+        await self._build_leap_btn_map()
         raw_map = await _find_led_entities_by_button_entities(
             self.hass, self._config_entry
         )
@@ -1059,16 +1106,21 @@ class LutronKeypadsController:
             )
             return
 
-        # button_number is null on RA3/QSX/SeeTouch keypads; use leap_button_number
+        # Resolve button number: prefer button_number, fall back to leap_button_number.
+        # Then translate through _leap_btn_map so that raise/lower buttons whose
+        # button_devices entry uses button_number=7/8 but events fire leap_button_number=18/19
+        # are correctly mapped to the configured key.
         raw_btn = data.get("button_number")
         if raw_btn is None:
-            raw_btn = data.get("leap_button_number")
-        if raw_btn is None:
-            _LOGGER.debug(
-                "'%s': event has no button_number or leap_button_number: %s",
-                self.name, data,
-            )
-            return
+            raw_leap = data.get("leap_button_number")
+            if raw_leap is None:
+                _LOGGER.debug(
+                    "'%s': event has no button_number or leap_button_number: %s",
+                    self.name, data,
+                )
+                return
+            leap_int = int(raw_leap)
+            raw_btn = self._leap_btn_map.get(leap_int, leap_int)
         btn_num = int(raw_btn)
 
         _LOGGER.debug(
