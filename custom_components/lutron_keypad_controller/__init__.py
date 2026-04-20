@@ -1121,8 +1121,8 @@ class LutronKeypadsController:
 
     _FAKE_WINDOW   = 0.025  # seconds — releases within this window are Lutron fakes
     _HOLD_CONFIRM  = 0.60   # seconds after PRESS before hold event fires
-    _RAMP_STEP_PCT = 4      # brightness % per ramp tick
-    _RAMP_INTERVAL = 0.15   # seconds between ticks
+    _RAMP_STEP_PCT = 10     # brightness % per ramp tick
+    _RAMP_INTERVAL = 0.40   # seconds between ticks (also used as transition time)
 
     _HOLD_ACTIONS = frozenset({
         ACTION_ENTITY_TOGGLE, ACTION_STATEFUL_SCENE, ACTION_RAISE, ACTION_LOWER
@@ -1218,7 +1218,7 @@ class LutronKeypadsController:
                 self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
                 return
             entities  = self._get_btn_light_entities(btn_cfg)
-            direction = self._next_ramp_dir(btn_num)
+            direction = self._next_ramp_dir(btn_num, entities)
 
         if not entities:
             _LOGGER.debug(
@@ -1298,25 +1298,32 @@ class LutronKeypadsController:
 
     # ── Ramp helpers ──────────────────────────────────────────────────────────
 
-    _RAMP_DIR_RESET_WINDOW = 2.0  # seconds — gap longer than this resets direction to "up"
+    _RAMP_DIR_RESET_WINDOW = 5.0  # seconds — gap longer than this resets direction
 
-    def _next_ramp_dir(self, btn_num: int) -> str:
-        """Return next ramp direction.
+    def _next_ramp_dir(self, btn_num: int, entities: list[str] | None = None) -> str:
+        """Return next ramp direction, cycling on repeated holds within the reset window.
 
-        Always starts "up" on the first hold (or after a 2s gap since the last
-        ramp ended).  Alternates to "down" on a follow-up hold within 2s, then
-        back to "up", and so on — so the user can nudge brightness up/down by
-        repeated press-and-holds without losing track of direction.
+        Fresh start (first hold, or gap > 5 s): default "up", unless every
+        rampable light is already at 100% — in that case default "down".
         """
         now = asyncio.get_event_loop().time()
         last_end = self._ramp_end_times.get(btn_num)
         if last_end is None or (now - last_end) > self._RAMP_DIR_RESET_WINDOW:
-            direction = "up"
+            if entities and all(self._light_at_max(e) for e in entities):
+                direction = "down"
+            else:
+                direction = "up"
         else:
             last_dir = self._ramp_dirs.get(btn_num, "down")
             direction = "up" if last_dir == "down" else "down"
         self._ramp_dirs[btn_num] = direction
         return direction
+
+    def _light_at_max(self, eid: str) -> bool:
+        state = self.hass.states.get(eid)
+        if state is None or state.state != "on":
+            return False
+        return round((state.attributes.get("brightness", 0) or 0) / 255 * 100) >= 99
 
     def _is_btn_led_on(self, btn_num: int) -> bool:
         sw = self._button_switches.get(btn_num)
