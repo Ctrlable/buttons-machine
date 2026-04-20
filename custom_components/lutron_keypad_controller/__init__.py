@@ -1353,14 +1353,26 @@ class LutronKeypadsController:
                 ]
         return []
 
+    def _scene_light_entities(self, scene_id: str) -> list[str]:
+        """Return light entity_ids that belong to an HA scene."""
+        state = self.hass.states.get(scene_id)
+        if state is None:
+            return []
+        return [e for e in state.attributes.get("entity_id", []) if e.startswith("light.")]
+
     def _get_last_ramp_lights(self) -> list[str]:
         """Return light entities from the most recent action (for raise/lower ramp)."""
         if self._last_action is None:
             return []
-        return [
-            e for e in self._last_action.get("entities", [])
-            if e.startswith("light.")
-        ]
+        entities = self._last_action.get("entities", [])
+        if entities:
+            return [e for e in entities if e.startswith("light.")]
+        # Fallback for scene-type actions that didn't store entities directly
+        action_type = self._last_action.get("type")
+        if action_type in (ACTION_STATEFUL_SCENE, ACTION_HA_SCENE):
+            scene_id = self._last_action.get("scene_id", "")
+            return self._scene_light_entities(scene_id) if scene_id else []
+        return []
 
     # ── Dispatch ──────────────────────────────────────────────────────────────
 
@@ -1555,6 +1567,19 @@ class LutronKeypadsController:
             }
             _LOGGER.debug("Light cycle: %s → %d%%", entity_ids, brightness_pct)
 
+    def _last_action_light_entities(self) -> list[str]:
+        """Resolve light entities from the last action regardless of action type."""
+        if self._last_action is None:
+            return []
+        entities = self._last_action.get("entities", [])
+        if entities:
+            return [e for e in entities if e.startswith("light.")]
+        action_type = self._last_action.get("type")
+        if action_type in (ACTION_STATEFUL_SCENE, ACTION_HA_SCENE):
+            scene_id = self._last_action.get("scene_id", "")
+            return self._scene_light_entities(scene_id) if scene_id else []
+        return []
+
     async def _raise(self, params: dict) -> None:
         """Raise shades or brighten lights based on last action context."""
         if self._last_action is None:
@@ -1562,23 +1587,24 @@ class LutronKeypadsController:
             return
 
         last = self._last_action
-        entities = last.get("entities", [])
         action_type = last.get("type")
+        entities = last.get("entities", [])
 
         if action_type == ACTION_COVER_CYCLE or _entities_are_covers(entities):
             await self.hass.services.async_call(
                 "cover", "open_cover", {ATTR_ENTITY_ID: entities}, blocking=True
             )
-            # Reset cover cycle state to open
             for btn, cfg in self._buttons.items():
                 if cfg.get(CONF_ACTION_TYPE) == ACTION_COVER_CYCLE and cfg.get(CONF_ACTION_TARGET):
                     tgts = _normalize_targets(cfg[CONF_ACTION_TARGET])
                     if any(t in entities for t in tgts):
                         self._cover_states[btn] = COVER_STATE_OPEN
-        elif action_type in (ACTION_LIGHT_CYCLE_DIM, ACTION_STATEFUL_SCENE, ACTION_HA_SCENE):
-            await self._adjust_light_brightness(entities, +RAISE_LOWER_STEP)
         else:
-            _LOGGER.debug("'%s': RAISE — no applicable entities from last action", self.name)
+            lights = self._last_action_light_entities()
+            if lights:
+                await self._adjust_light_brightness(lights, +RAISE_LOWER_STEP)
+            else:
+                _LOGGER.debug("'%s': RAISE — no applicable entities from last action", self.name)
 
     async def _lower(self, params: dict) -> None:
         """Lower shades or dim lights based on last action context."""
@@ -1587,8 +1613,8 @@ class LutronKeypadsController:
             return
 
         last = self._last_action
-        entities = last.get("entities", [])
         action_type = last.get("type")
+        entities = last.get("entities", [])
 
         if action_type == ACTION_COVER_CYCLE or _entities_are_covers(entities):
             await self.hass.services.async_call(
@@ -1599,10 +1625,12 @@ class LutronKeypadsController:
                     tgts = _normalize_targets(cfg[CONF_ACTION_TARGET])
                     if any(t in entities for t in tgts):
                         self._cover_states[btn] = COVER_STATE_CLOSE
-        elif action_type in (ACTION_LIGHT_CYCLE_DIM, ACTION_STATEFUL_SCENE, ACTION_HA_SCENE):
-            await self._adjust_light_brightness(entities, -RAISE_LOWER_STEP)
         else:
-            _LOGGER.debug("'%s': LOWER — no applicable entities from last action", self.name)
+            lights = self._last_action_light_entities()
+            if lights:
+                await self._adjust_light_brightness(lights, -RAISE_LOWER_STEP)
+            else:
+                _LOGGER.debug("'%s': LOWER — no applicable entities from last action", self.name)
 
     async def _adjust_light_brightness(
         self, entities: list[str], delta_pct: int
