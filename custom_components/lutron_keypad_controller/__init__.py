@@ -1111,7 +1111,7 @@ class LutronKeypadsController:
     #                 For hold-capable actions: wait for fake release.
     #
     #   RELEASE¹    → elapsed < _FAKE_WINDOW (50 ms): it's Lutron's fake release.
-    #                 Start _HOLD_CONFIRM (100 ms) timer via call_later.
+    #                 Start _HOLD_CONFIRM (300 ms) timer via call_later.
     #
     #   RELEASE²    → arrives while confirm timer is running → TAP: cancel timer, dispatch.
     #               → arrives while ramp is active (_held=True) → RAMP STOP: cancel ramp task.
@@ -1120,7 +1120,7 @@ class LutronKeypadsController:
     #                 start ramp task; next hold within 2s alternates direction.
 
     _FAKE_WINDOW   = 0.05   # seconds — releases within this are Lutron's fake
-    _HOLD_CONFIRM  = 0.10   # seconds after fake release before hold event fires
+    _HOLD_CONFIRM  = 0.30   # seconds after fake release before hold event fires
     _RAMP_STEP_PCT = 4      # brightness % per ramp tick
     _RAMP_INTERVAL = 0.15   # seconds between ticks
 
