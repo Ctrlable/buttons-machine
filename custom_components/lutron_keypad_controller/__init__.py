@@ -866,6 +866,9 @@ class LutronKeypadsController:
         # Sensors to notify when _last_action changes
         self._state_sensors: list = []
 
+        # Entity-state tracking for entity_toggle LED sync (Room/Scene Mode)
+        self._entity_tracking_unsubs: list = []
+
     # ── Registration ──────────────────────────────────────────────────────────
 
     @callback
@@ -876,6 +879,9 @@ class LutronKeypadsController:
 
     @callback
     def async_unregister(self) -> None:
+        for unsub in self._entity_tracking_unsubs:
+            unsub()
+        self._entity_tracking_unsubs.clear()
         """Unsubscribe from events (called on entry unload)."""
         if self._unsubscribe is not None:
             self._unsubscribe()
@@ -991,6 +997,8 @@ class LutronKeypadsController:
                 self.name,
             )
 
+        self._setup_entity_state_tracking()
+
     # ── LED helpers ───────────────────────────────────────────────────────────
 
     def _get_led_entity(self, btn_num: int) -> str | None:
@@ -1000,6 +1008,48 @@ class LutronKeypadsController:
 
     def register_button_switch(self, btn_num: int, switch: Any) -> None:
         self._button_switches[btn_num] = switch
+        # Sync initial LED state now that the switch entity is registered.
+        # For entity_toggle buttons the LED tracks entity states (Room Mode),
+        # not the last button press, so we push the correct value immediately.
+        btn_cfg = self._buttons.get(btn_num, {})
+        if btn_cfg.get(CONF_ACTION_TYPE) == ACTION_ENTITY_TOGGLE:
+            entities = _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
+            if entities:
+                self._update_room_mode_led(btn_num, entities)
+
+    @callback
+    def _update_room_mode_led(self, btn_num: int, entities: list[str]) -> None:
+        """Room Mode: LED on if any assigned entity is on, off when all are off."""
+        any_on = any(
+            (st := self.hass.states.get(eid)) is not None
+            and st.state not in ("off", "closed", "unavailable", "unknown", "none")
+            for eid in entities
+        )
+        self._update_button_switch_state(btn_num, any_on)
+
+    def _setup_entity_state_tracking(self) -> None:
+        """Subscribe to state changes for entity_toggle buttons (Room Mode LED sync)."""
+        for unsub in self._entity_tracking_unsubs:
+            unsub()
+        self._entity_tracking_unsubs.clear()
+
+        for btn_num, btn_cfg in self._buttons.items():
+            if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_ENTITY_TOGGLE:
+                continue
+            entities = _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
+            if not entities:
+                continue
+
+            @callback
+            def _on_entity_change(event: Any, _btn=btn_num, _ents=entities) -> None:
+                self._update_room_mode_led(_btn, _ents)
+
+            unsub = async_track_state_change_event(self.hass, entities, _on_entity_change)
+            self._entity_tracking_unsubs.append(unsub)
+            _LOGGER.debug(
+                "'%s': button %d: Room Mode tracking %s",
+                self.name, btn_num, entities,
+            )
 
     def register_state_sensor(self, sensor: Any) -> None:
         if sensor not in self._state_sensors:
