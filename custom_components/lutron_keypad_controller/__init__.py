@@ -996,86 +996,11 @@ class LutronKeypadsController:
             self.name, matched, self._leap_btn_map,
         )
 
-    async def _build_leap_btn_map_from_entities(self) -> None:
-        """Fallback LEAP map builder for Caseta Pro where bridge.button_devices is absent.
-
-        Looks up the raise/lower HA button entities for this device and extracts
-        their LEAP numbers from unique_ids so that leap_btn=18/19 → btn_num=7/8.
-        """
-        if self._config_entry is None:
-            return
-
-        raise_btn = next(
-            (n for n, cfg in self._buttons.items()
-             if cfg.get(CONF_ACTION_TYPE) == ACTION_RAISE),
-            None,
-        )
-        lower_btn = next(
-            (n for n, cfg in self._buttons.items()
-             if cfg.get(CONF_ACTION_TYPE) == ACTION_LOWER),
-            None,
-        )
-        if raise_btn is None and lower_btn is None:
-            return  # no raise/lower configured — nothing to map
-
-        lutron_device = _find_lutron_device(self.hass, self._config_entry)
-        if lutron_device is None:
-            return
-
-        ent_reg = er.async_get(self.hass)
-        button_entries = [
-            e for e in er.async_entries_for_device(ent_reg, lutron_device.id)
-            if e.domain == "button"
-        ]
-
-        for btn_e in button_entries:
-            leap_num = _extract_button_number(btn_e, self.hass)
-            if leap_num is None:
-                continue
-            # Match by entity name/id — Lutron appends Raise/Lower/Up/Down
-            name_lc = (btn_e.original_name or btn_e.entity_id or "").lower()
-            if raise_btn is not None and any(
-                name_lc.endswith(kw)
-                for kw in (" raise", "_raise", "-raise", " up", "_up", "-up")
-            ):
-                if leap_num != raise_btn:
-                    self._leap_btn_map[leap_num] = raise_btn
-                    _LOGGER.info(
-                        "'%s': LEAP map (entity fallback): leap_btn=%d → raise btn=%d",
-                        self.name, leap_num, raise_btn,
-                    )
-            elif lower_btn is not None and any(
-                name_lc.endswith(kw)
-                for kw in (" lower", "_lower", "-lower", " down", "_down", "-down")
-            ):
-                if leap_num != lower_btn:
-                    self._leap_btn_map[leap_num] = lower_btn
-                    _LOGGER.info(
-                        "'%s': LEAP map (entity fallback): leap_btn=%d → lower btn=%d",
-                        self.name, leap_num, lower_btn,
-                    )
-
-        if self._leap_btn_map:
-            _LOGGER.info(
-                "'%s': LEAP map from entity registry: %s",
-                self.name, self._leap_btn_map,
-            )
-        else:
-            _LOGGER.warning(
-                "'%s': LEAP map entity fallback found nothing — "
-                "raise/lower button entities may not exist or names are unexpected. "
-                "button entities: %s",
-                self.name,
-                [(e.entity_id, e.original_name) for e in button_entries],
-            )
-
     async def async_initialize(self) -> None:
         """Discover LED entities — button-entity method first, registry scan as fallback."""
         if self._config_entry is None:
             return
         await self._build_leap_btn_map()
-        if not self._leap_btn_map:
-            await self._build_leap_btn_map_from_entities()
         raw_map = await _find_led_entities_by_button_entities(
             self.hass, self._config_entry
         )
@@ -1280,6 +1205,35 @@ class LutronKeypadsController:
             )
             self._update_button_switch_state(btn_num, should_be_on)
 
+    def _try_auto_map_raise_lower(self, leap_num: int) -> int | None:
+        """Auto-detect and cache a raise/lower LEAP number on first encounter.
+
+        Uses RAISE_LOWER_BUTTON_TYPES (the static list of all known Lutron raise/lower
+        component IDs) to identify the event number without relying on entity naming.
+        Only fires when leap_num is not already a configured button, so it can never
+        accidentally remap a real action button.
+        """
+        from .const import RAISE_LOWER_BUTTON_TYPES
+        for action_type, known_nums in (
+            (ACTION_RAISE, RAISE_LOWER_BUTTON_TYPES["raise"]),
+            (ACTION_LOWER, RAISE_LOWER_BUTTON_TYPES["lower"]),
+        ):
+            if leap_num not in known_nums:
+                continue
+            configured = next(
+                (n for n, c in self._buttons.items()
+                 if c.get(CONF_ACTION_TYPE) == action_type),
+                None,
+            )
+            if configured is not None:
+                self._leap_btn_map[leap_num] = configured
+                _LOGGER.info(
+                    "'%s': auto-mapped raise/lower: leap_btn=%d → btn=%d (%s)",
+                    self.name, leap_num, configured, action_type,
+                )
+                return configured
+        return None
+
     # ── Event matching ────────────────────────────────────────────────────────
 
     def _matches_event(self, event_data: dict) -> bool:
@@ -1360,6 +1314,12 @@ class LutronKeypadsController:
         )
 
         btn_cfg = self._buttons.get(btn_num)
+        if btn_cfg is None:
+            # Button not found — try auto-mapping unknown raise/lower LEAP numbers
+            remapped = self._try_auto_map_raise_lower(btn_num)
+            if remapped is not None:
+                btn_num = remapped
+                btn_cfg = self._buttons.get(btn_num)
         if btn_cfg is None:
             _LOGGER.debug(
                 "'%s': button %d pressed but not configured — ignoring", self.name, btn_num
@@ -1749,7 +1709,7 @@ class LutronKeypadsController:
             _LOGGER.error("'%s': unknown action_type '%s'", self.name, action)
             return
 
-        if self._last_action is not None:
+        if self._last_action is not None and action not in (ACTION_RAISE, ACTION_LOWER):
             self._last_action["button"] = btn_num
         self._notify_state_sensors()
 
