@@ -996,11 +996,86 @@ class LutronKeypadsController:
             self.name, matched, self._leap_btn_map,
         )
 
+    async def _build_leap_btn_map_from_entities(self) -> None:
+        """Fallback LEAP map builder for Caseta Pro where bridge.button_devices is absent.
+
+        Looks up the raise/lower HA button entities for this device and extracts
+        their LEAP numbers from unique_ids so that leap_btn=18/19 → btn_num=7/8.
+        """
+        if self._config_entry is None:
+            return
+
+        raise_btn = next(
+            (n for n, cfg in self._buttons.items()
+             if cfg.get(CONF_ACTION_TYPE) == ACTION_RAISE),
+            None,
+        )
+        lower_btn = next(
+            (n for n, cfg in self._buttons.items()
+             if cfg.get(CONF_ACTION_TYPE) == ACTION_LOWER),
+            None,
+        )
+        if raise_btn is None and lower_btn is None:
+            return  # no raise/lower configured — nothing to map
+
+        lutron_device = _find_lutron_device(self.hass, self._config_entry)
+        if lutron_device is None:
+            return
+
+        ent_reg = er.async_get(self.hass)
+        button_entries = [
+            e for e in er.async_entries_for_device(ent_reg, lutron_device.id)
+            if e.domain == "button"
+        ]
+
+        for btn_e in button_entries:
+            leap_num = _extract_button_number(btn_e, self.hass)
+            if leap_num is None:
+                continue
+            # Match by entity name/id — Lutron appends Raise/Lower/Up/Down
+            name_lc = (btn_e.original_name or btn_e.entity_id or "").lower()
+            if raise_btn is not None and any(
+                name_lc.endswith(kw)
+                for kw in (" raise", "_raise", "-raise", " up", "_up", "-up")
+            ):
+                if leap_num != raise_btn:
+                    self._leap_btn_map[leap_num] = raise_btn
+                    _LOGGER.info(
+                        "'%s': LEAP map (entity fallback): leap_btn=%d → raise btn=%d",
+                        self.name, leap_num, raise_btn,
+                    )
+            elif lower_btn is not None and any(
+                name_lc.endswith(kw)
+                for kw in (" lower", "_lower", "-lower", " down", "_down", "-down")
+            ):
+                if leap_num != lower_btn:
+                    self._leap_btn_map[leap_num] = lower_btn
+                    _LOGGER.info(
+                        "'%s': LEAP map (entity fallback): leap_btn=%d → lower btn=%d",
+                        self.name, leap_num, lower_btn,
+                    )
+
+        if self._leap_btn_map:
+            _LOGGER.info(
+                "'%s': LEAP map from entity registry: %s",
+                self.name, self._leap_btn_map,
+            )
+        else:
+            _LOGGER.warning(
+                "'%s': LEAP map entity fallback found nothing — "
+                "raise/lower button entities may not exist or names are unexpected. "
+                "button entities: %s",
+                self.name,
+                [(e.entity_id, e.original_name) for e in button_entries],
+            )
+
     async def async_initialize(self) -> None:
         """Discover LED entities — button-entity method first, registry scan as fallback."""
         if self._config_entry is None:
             return
         await self._build_leap_btn_map()
+        if not self._leap_btn_map:
+            await self._build_leap_btn_map_from_entities()
         raw_map = await _find_led_entities_by_button_entities(
             self.hass, self._config_entry
         )
