@@ -32,7 +32,7 @@
       "serial_required": "A serial number is required."
     },
     "abort": {
-      "already_configured": "This keypad is already configured.",
+      "already_configured": "All discovered keypads are already configured.",
       "lutron_not_loaded": "The Lutron Caséta integration must be set up before adding keypads."
     }
   },

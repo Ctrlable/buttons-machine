@@ -53,45 +53,64 @@ _LOGGER = logging.getLogger(__name__)
 
 # ── Lutron device-type string → our keypad type ───────────────────────────────
 LUTRON_TYPE_MAP: dict[str, str] = {
-    "SeeTouchKeypad":               KEYPAD_SEETOUCH,
-    "SeeTouchHybridKeypad":         KEYPAD_SEETOUCH_HYBRID,
-    "HybridSeeTouch":               KEYPAD_SEETOUCH_HYBRID,
-    "SeeTouch":                     KEYPAD_SEETOUCH,
-    "SunnataKeypad":                KEYPAD_SUNNATA,
-    "SunnataHybridKeypad":          KEYPAD_SUNNATA_HYBRID,
-    "SunnataSwitchingKeypad":       KEYPAD_SUNNATA,
-    "Sunnata":                      KEYPAD_SUNNATA,
-    "AliseeKeypad":                 KEYPAD_ALISEE,
-    "Alisee":                       KEYPAD_ALISEE,
-    "PalladiomKeypad":              KEYPAD_PALLADIOM,
-    "Palladiom":                    KEYPAD_PALLADIOM,
-    "PalladiomWirelessKeypad":      KEYPAD_PALLADIOM,
-    "TabletopSeeTouch":             KEYPAD_TABLETOP,
-    "SeeTouchTabletop":             KEYPAD_TABLETOP,
-    "TabletopKeypad":               KEYPAD_TABLETOP,
-    "Pico1Button":                  KEYPAD_PICO,
-    "Pico2Button":                  KEYPAD_PICO,
-    "Pico2ButtonRaiseLower":        KEYPAD_PICO,
-    "Pico3Button":                  KEYPAD_PICO,
-    "Pico3ButtonRaiseLower":        KEYPAD_PICO,
-    "Pico4Button":                  KEYPAD_PICO,
-    "Pico4ButtonScene":             KEYPAD_PICO,
-    "Pico4ButtonZone":              KEYPAD_PICO,
-    "Pico4Button2Group":            KEYPAD_PICO,
-    "FourGroupRemote":              KEYPAD_PICO,
-    "PaddleRemote":                 KEYPAD_PICO,
+    # SeeTouch / Hybrid
+    "SeeTouchKeypad":                   KEYPAD_SEETOUCH,
+    "SeeTouchHybridKeypad":             KEYPAD_SEETOUCH_HYBRID,
+    "HybridSeeTouch":                   KEYPAD_SEETOUCH_HYBRID,
+    "HybridSeeTouchKeypad":             KEYPAD_SEETOUCH_HYBRID,
+    "SeeTouch":                         KEYPAD_SEETOUCH,
+    # Sunnata
+    "SunnataKeypad":                    KEYPAD_SUNNATA,
+    "SunnataHybridKeypad":              KEYPAD_SUNNATA_HYBRID,
+    "SunnataSwitchingKeypad":           KEYPAD_SUNNATA,
+    "Sunnata":                          KEYPAD_SUNNATA,
+    # Alisee — always map before any generic SeeTouch fallback
+    "AliseeKeypad":                     KEYPAD_ALISEE,
+    "AliseeSeeTouchKeypad":             KEYPAD_ALISEE,
+    "Alisee":                           KEYPAD_ALISEE,
+    "GrafikEyeQS":                      KEYPAD_ALISEE,
+    "GRAFIK Eye QS":                    KEYPAD_ALISEE,
+    # Palladiom variants — Homeworks QSX / RA3
+    "PalladiomKeypad":                  KEYPAD_PALLADIOM,
+    "PalladiomKeypad2Button":           KEYPAD_PALLADIOM,
+    "PalladiomKeypad3Button":           KEYPAD_PALLADIOM,
+    "PalladiomKeypad4Button":           KEYPAD_PALLADIOM,
+    "PalladiomKeypad5Button":           KEYPAD_PALLADIOM,
+    "PalladiomKeypad7Button":           KEYPAD_PALLADIOM,
+    "Palladiom":                        KEYPAD_PALLADIOM,
+    "PalladiomWirelessKeypad":          KEYPAD_PALLADIOM,
+    "PalladiomSeeTouchKeypad":          KEYPAD_PALLADIOM,
+    "PalladiomHybridKeypad":            KEYPAD_PALLADIOM,
+    # Tabletop
+    "TabletopSeeTouch":                 KEYPAD_TABLETOP,
+    "SeeTouchTabletop":                 KEYPAD_TABLETOP,
+    "TabletopKeypad":                   KEYPAD_TABLETOP,
+    # Pico remotes
+    "Pico1Button":                      KEYPAD_PICO,
+    "Pico2Button":                      KEYPAD_PICO,
+    "Pico2ButtonRaiseLower":            KEYPAD_PICO,
+    "Pico3Button":                      KEYPAD_PICO,
+    "Pico3ButtonRaiseLower":            KEYPAD_PICO,
+    "Pico4Button":                      KEYPAD_PICO,
+    "Pico4ButtonScene":                 KEYPAD_PICO,
+    "Pico4ButtonZone":                  KEYPAD_PICO,
+    "Pico4Button2Group":                KEYPAD_PICO,
+    "FourGroupRemote":                  KEYPAD_PICO,
+    "PaddleRemote":                     KEYPAD_PICO,
 }
 
+# Ordered most-specific → least-specific so a type string containing multiple
+# keywords (e.g. "PalladiomSeeTouchKeypad") resolves to the right family.
 LUTRON_TYPE_FUZZY: list[tuple[str, str]] = [
+    ("alisee",     KEYPAD_ALISEE),       # before "seetouch" / "hybrid" / "keypad"
+    ("palladiom",  KEYPAD_PALLADIOM),    # before "seetouch" / "keypad"
+    ("sunnata",    KEYPAD_SUNNATA),
     ("hybrid",     KEYPAD_SEETOUCH_HYBRID),
     ("seetouch",   KEYPAD_SEETOUCH),
-    ("sunnata",    KEYPAD_SUNNATA),
-    ("alisee",     KEYPAD_ALISEE),
-    ("palladiom",  KEYPAD_PALLADIOM),
     ("tabletop",   KEYPAD_TABLETOP),
     ("pico",       KEYPAD_PICO),
     ("remote",     KEYPAD_PICO),
-    ("keypad",     KEYPAD_SEETOUCH),
+    ("keypad",     KEYPAD_SEETOUCH),     # last-resort generic fallback
 ]
 
 BUTTON_TYPE_KEYWORDS = {
@@ -335,13 +354,26 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not self._discovered_keypads:
             return await self.async_step_manual()
 
-        device_options = _build_device_options(self._discovered_keypads)
+        # Exclude keypads that already have a config entry in this domain
+        configured_serials: set[str] = {
+            entry.unique_id or ""
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+        }
+        unconfigured = [
+            d for d in self._discovered_keypads
+            if str(d.get("serial", "")) not in configured_serials
+        ]
+
+        if not unconfigured:
+            return self.async_abort(reason="already_configured")
+
+        device_options = _build_device_options(unconfigured)
         errors: dict[str, str] = {}
 
         if user_input is not None:
             selected_serial = user_input.get("device_serial", "")
             self._selected_device = next(
-                (d for d in self._discovered_keypads
+                (d for d in unconfigured
                  if str(d.get("serial", "")) == selected_serial),
                 None,
             )
@@ -367,7 +399,7 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {vol.Required("device_serial"): vol.In(device_options)}
             ),
             errors=errors,
-            description_placeholders={"count": str(len(self._discovered_keypads))},
+            description_placeholders={"count": str(len(unconfigured))},
         )
 
     async def async_step_confirm(
