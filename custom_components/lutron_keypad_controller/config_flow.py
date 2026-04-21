@@ -118,7 +118,8 @@ def _is_keypad_device(device: dict) -> bool:
     return any(kw in lower for kw in BUTTON_TYPE_KEYWORDS)
 
 
-def _get_lutron_bridge(hass: HomeAssistant):
+def _iter_lutron_bridges(hass: HomeAssistant):
+    """Yield every loaded pylutron-caseta bridge, across all config entries."""
     for entry in hass.config_entries.async_entries("lutron_caseta"):
         if entry.state is not ConfigEntryState.LOADED:
             continue
@@ -126,27 +127,41 @@ def _get_lutron_bridge(hass: HomeAssistant):
         if runtime is not None:
             bridge = getattr(runtime, "bridge", None)
             if bridge is not None:
-                return bridge
+                yield bridge
+                continue
         entry_data = hass.data.get("lutron_caseta", {}).get(entry.entry_id)
         if entry_data is not None:
             bridge = getattr(entry_data, "bridge", None)
             if bridge is None and isinstance(entry_data, dict):
                 bridge = entry_data.get("bridge")
             if bridge is not None:
-                return bridge
-    return None
+                yield bridge
+
+
+def _get_lutron_bridge(hass: HomeAssistant):
+    """Return the first available bridge (use _iter_lutron_bridges for multi-bridge setups)."""
+    return next(_iter_lutron_bridges(hass), None)
 
 
 def _discover_keypads(hass: HomeAssistant) -> list[dict]:
-    bridge = _get_lutron_bridge(hass)
-    if bridge is None:
-        return []
-    try:
-        all_devices: dict = bridge.get_devices()
-    except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning("Could not query Lutron bridge devices: %s", exc)
-        return []
-    keypads = [d for d in all_devices.values() if _is_keypad_device(d)]
+    """Collect keypad devices from ALL loaded bridges (supports multi-bridge deployments)."""
+    seen: set[str] = set()
+    keypads: list[dict] = []
+    for bridge in _iter_lutron_bridges(hass):
+        try:
+            all_devices: dict = bridge.get_devices()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Could not query Lutron bridge devices: %s", exc)
+            continue
+        for d in all_devices.values():
+            if not _is_keypad_device(d):
+                continue
+            serial = str(d.get("serial", ""))
+            if serial and serial in seen:
+                continue
+            keypads.append(d)
+            if serial:
+                seen.add(serial)
     keypads.sort(key=lambda d: (d.get("area_name", ""), d.get("name", "")))
     return keypads
 
@@ -187,6 +202,12 @@ def _strip_engraving(full_name: str, area: str, device: str) -> str:
     return name.title() if name else full_name.strip()
 
 
+import re as _re_cf
+
+_RAISE_NAME_RE = _re_cf.compile(r"\braise\b", _re_cf.IGNORECASE)
+_LOWER_NAME_RE = _re_cf.compile(r"\blower\b", _re_cf.IGNORECASE)
+
+
 def _detect_button_layout(
     hass: HomeAssistant,
     serial: str,
@@ -197,33 +218,31 @@ def _detect_button_layout(
 ) -> dict:
     """Query bridge.button_devices for the actual buttons on this device.
 
+    Searches every loaded lutron_caseta bridge so the correct bridge is found
+    in multi-bridge deployments (e.g. Caseta Pro + RA3 on the same HA instance).
+
     Returns a dict with button_numbers / configurable_buttons / raise_button /
     lower_button / button_names to be stored in config entry data.
     Returns {} on failure so the caller falls back to the family-based count.
     """
-    bridge = _get_lutron_bridge(hass)
-    if bridge is None:
-        return {}
+    matching: list[dict] = []
+    for bridge in _iter_lutron_bridges(hass):
+        button_devices: dict = getattr(bridge, "button_devices", None) or {}
+        if not button_devices:
+            continue  # Caseta Pro bridge — has no button_devices; skip
+        candidates = [
+            bd for bd in button_devices.values()
+            if (serial and str(bd.get("serial", "")) == serial)
+            or (device_id and str(bd.get("device_id", "")) == device_id)
+        ]
+        if candidates:
+            matching = candidates
+            break
 
-    button_devices: dict = getattr(bridge, "button_devices", None) or {}
-    if not button_devices:
-        _LOGGER.debug(
-            "bridge.button_devices not available for serial=%s device_id=%s "
-            "(expected for CASETA Pro); using keypad-type button count",
-            serial, device_id,
-        )
-        return {}
-
-    # Match by serial (RA3/QSX) or by device_id (LEAP) — whichever the bridge uses
-    matching = [
-        bd for bd in button_devices.values()
-        if (serial and str(bd.get("serial", "")) == serial)
-        or (device_id and str(bd.get("device_id", "")) == device_id)
-    ]
     if not matching:
         _LOGGER.debug(
-            "No button_devices matched serial=%s device_id=%s; "
-            "using keypad-type button count",
+            "No button_devices matched serial=%s device_id=%s across any bridge "
+            "(expected for Caseta Pro); using keypad-type button count",
             serial, device_id,
         )
         return {}
@@ -258,9 +277,14 @@ def _detect_button_layout(
 
         if bnum is None:
             continue
-        if name_lc.endswith((" raise", "-raise", " up", "-up")):
+        # Detect raise/lower: endswith patterns OR word-boundary "raise"/"lower"
+        # anywhere in the name (handles non-standard Lutron naming, international
+        # setups, and models where the word order differs).
+        if (name_lc.endswith((" raise", "-raise", " up", "-up"))
+                or _RAISE_NAME_RE.search(raw_name)):
             raise_btn = bnum
-        elif name_lc.endswith((" lower", "-lower", " down", "-down")):
+        elif (name_lc.endswith((" lower", "-lower", " down", "-down"))
+                or _LOWER_NAME_RE.search(raw_name)):
             lower_btn = bnum
         engraving = _strip_engraving(raw_name, area_name, device_name)
         if engraving:
