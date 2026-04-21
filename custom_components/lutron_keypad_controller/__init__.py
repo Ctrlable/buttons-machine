@@ -1138,6 +1138,7 @@ class LutronKeypadsController:
             for eid in entities
         )
         self._update_button_switch_state(btn_num, any_on)
+        self.hass.async_create_task(self._write_led_entity(btn_num, any_on))
 
     @callback
     def _update_scene_mode_led(self, btn_num: int, entities: list[str]) -> None:
@@ -1171,6 +1172,7 @@ class LutronKeypadsController:
 
         all_match = bool(entities) and all(_at_target(eid) for eid in entities)
         self._update_button_switch_state(btn_num, all_match)
+        self.hass.async_create_task(self._write_led_entity(btn_num, all_match))
 
     def _setup_entity_state_tracking(self) -> None:
         """Subscribe to state changes for entity_toggle buttons (Room/Scene Mode LED sync)."""
@@ -1345,9 +1347,12 @@ class LutronKeypadsController:
                     self.name, data,
                 )
                 return
-            leap_int = int(raw_leap)
-            raw_btn = self._leap_btn_map.get(leap_int, leap_int)
-        btn_num = int(raw_btn)
+            raw_btn = int(raw_leap)
+        # Always apply LEAP remapping: on Caseta Pro button_number IS the LEAP
+        # number (e.g. 18/19 for raise/lower) and needs mapping to the configured
+        # sequential number (e.g. 7/8).  Regular buttons aren't in the map so
+        # they pass through unchanged.
+        btn_num = self._leap_btn_map.get(int(raw_btn), int(raw_btn))
 
         _LOGGER.debug(
             "'%s': matched — resolved btn_num=%d, configured buttons=%s",
@@ -1745,7 +1750,7 @@ class LutronKeypadsController:
             return
 
         if self._last_action is not None:
-            self._last_action.setdefault("button", btn_num)
+            self._last_action["button"] = btn_num
         self._notify_state_sensors()
 
     # ── Action implementations ────────────────────────────────────────────────
