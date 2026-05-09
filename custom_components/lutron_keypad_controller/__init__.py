@@ -977,7 +977,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Populate button layout for entries that were created before auto-detection worked.
     # Try immediately; if the bridge isn't ready yet, retry after HA finishes starting.
     await _auto_refresh_button_layout(hass, entry)
-    if not entry.data.get("button_numbers"):
+    if not entry.data.get("button_numbers") or "model_number" not in entry.data:
         async def _deferred_refresh(_event: Event | None = None) -> None:
             await _auto_refresh_button_layout(hass, entry)
 

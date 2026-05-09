@@ -20,13 +20,19 @@ const KEYPAD_LAYOUTS = {
 
 /**
  * Parse the physical column layout from a keypad model number string.
- * Returns an array of per-column button counts, e.g. [4] or [4, 4].
+ * Returns an array of per-column button counts, e.g. [4] or [3, 4].
  * Returns null when the model is unknown — caller falls back to KEYPAD_LAYOUTS.cols.
  *
- * Palladiom  "HQWT-S-PR4W"  → [4]      (one letter + digits + W)
- *            "HQWT-S-P44W"  → [4, 4]
- * Alisee     "2 Column (3B-3B)" → [3, 3]
- * SeeTouch   "HQRD-W6BRL"   → [6]      (W + digits + B)
+ * Palladiom button config codes (per Lutron spec 369857r):
+ *   Single char → 1-column: 2=2btn, 3=3btn, 4=4btn, R=3btn+Raise/Lower
+ *   Two chars   → 2-column: each char = that column's config
+ *   Model format: ...P{config}W...  e.g. HQWT-S-P44W, HQWT-S-PR4W
+ *     PR4W → config=R4 → [3, 4]  (left: 3btn+RL, right: 4btn)
+ *     P44W → config=44 → [4, 4]
+ *     P4W  → config=4  → [4]
+ *
+ * Alisee  "2 Column (3B-3B)" → [3, 3]
+ * SeeTouch "HQRD-W6BRL"     → [6]   (W + digits + B or S)
  */
 function parsePhysicalColumns(model, keypadType) {
   if (!model) return null;
@@ -35,11 +41,13 @@ function parsePhysicalColumns(model, keypadType) {
     if (m) return m[1].split("-").map(s => parseInt(s, 10));
   }
   if (keypadType === "palladiom") {
-    const m = model.match(/[A-Z](\d+)W/);
-    if (m) return m[1].split("").map(Number);
+    // Config is 1-2 chars from [234R] between the letter P and trailing W
+    const m = model.match(/P([2-4R]{1,2})W/);
+    if (m) return m[1].split("").map(c => c === "R" ? 3 : parseInt(c, 10));
   }
   if (keypadType === "seetouch" || keypadType === "seetouch_hybrid") {
-    const m = model.match(/W(\d+)B/);
+    // W{N}B or W{N}BS or W{N}S (S = scene with raise/lower)
+    const m = model.match(/W(\d+)[BS]/);
     if (m) return [parseInt(m[1], 10)];
   }
   return null;
