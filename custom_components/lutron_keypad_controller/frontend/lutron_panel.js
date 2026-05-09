@@ -111,10 +111,31 @@ const STYLES = `
     overflow: hidden;
   }
 
+  /* ── Resize handles ── */
+  .resize-handle-v {
+    width: 5px;
+    cursor: ew-resize;
+    background: var(--divider-color, #e0e0e0);
+    flex-shrink: 0;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  .resize-handle-v:hover, .resize-handle-v.dragging { background: #4caf50; }
+
+  .resize-handle-h {
+    height: 5px;
+    cursor: ns-resize;
+    background: var(--divider-color, #e0e0e0);
+    flex-shrink: 0;
+    transition: background 0.15s;
+    user-select: none;
+  }
+  .resize-handle-h:hover, .resize-handle-h.dragging { background: #4caf50; }
+
   /* ── Left sidebar: keypad list ── */
   .sidebar {
     width: 220px;
-    min-width: 180px;
+    min-width: 140px;
     background: #1e2a22;
     color: #c8e6c9;
     display: flex;
@@ -191,11 +212,11 @@ const STYLES = `
 
   /* ── Breadcrumb ── */
   .breadcrumb {
-    background: #e8f5e9;
-    border-bottom: 1px solid #c8e6c9;
+    background: rgba(76,175,80,0.07);
+    border-bottom: 1px solid rgba(76,175,80,0.2);
     padding: 6px 16px;
     font-size: 12px;
-    color: #2e7d32;
+    color: #4caf50;
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -214,14 +235,13 @@ const STYLES = `
   /* ── Left column: keypad visual ── */
   .col-keypad {
     width: 186px;
-    min-width: 160px;
+    min-width: 120px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     padding: 12px;
     background: var(--card-background-color, #fff);
-    border-right: 1px solid var(--divider-color, #e0e0e0);
     overflow-y: auto;
     gap: 10px;
   }
@@ -242,7 +262,7 @@ const STYLES = `
     color: var(--primary-text-color, #212121);
     transition: background 0.15s;
   }
-  .kp-nav button:hover { background: #e8f5e9; border-color: #a5d6a7; }
+  .kp-nav button:hover { background: rgba(76,175,80,0.1); border-color: #a5d6a7; }
   .kp-nav button:disabled { opacity: 0.3; cursor: default; }
   .kp-nav .btn-num {
     font-weight: 600;
@@ -417,7 +437,7 @@ const STYLES = `
 
   /* ── Extra config fields (brightness, cct, scene group) ── */
   .extra-config {
-    background: #f9fbf9;
+    background: var(--secondary-background-color, #f5f5f5);
     border-bottom: 1px solid var(--divider-color, #e0e0e0);
     padding: 8px 16px;
     display: flex;
@@ -462,7 +482,7 @@ const STYLES = `
     margin-left: auto;
     background: none;
     border: none;
-    color: #2e7d32;
+    color: #4caf50;
     cursor: pointer;
     font-size: 12px;
     text-decoration: underline;
@@ -489,12 +509,12 @@ const STYLES = `
     transition: background 0.12s;
     gap: 8px;
   }
-  .area-header:hover { background: #f0f7f0; }
-  .area-expand { font-size: 10px; color: #aaa; width: 14px; }
+  .area-header:hover { background: rgba(76,175,80,0.06); }
+  .area-expand { font-size: 10px; color: var(--secondary-text-color, #aaa); width: 14px; }
   .area-check { accent-color: #2e7d32; width: 14px; height: 14px; cursor: pointer; }
   .area-name { font-weight: 600; font-size: 13px; flex: 1; }
   .area-count { font-size: 11px; color: var(--secondary-text-color, #757575); }
-  .area-entities { display: none; background: #fafafa; }
+  .area-entities { display: none; background: var(--secondary-background-color, #fafafa); }
   .area-entities.open { display: block; }
   .entity-row {
     display: flex;
@@ -505,8 +525,8 @@ const STYLES = `
     transition: background 0.1s;
     border-top: 1px solid var(--divider-color, #f0f0f0);
   }
-  .entity-row:hover { background: #f0f7f0; }
-  .entity-row.selected { background: #e8f5e9; }
+  .entity-row:hover { background: rgba(76,175,80,0.06); }
+  .entity-row.selected { background: rgba(76,175,80,0.12); }
   .entity-check { accent-color: #2e7d32; width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
   .entity-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
   .entity-name { flex: 1; font-size: 13px; }
@@ -516,19 +536,18 @@ const STYLES = `
     text-align: right;
     min-width: 50px;
   }
-  .entity-state.on { color: #2e7d32; font-weight: 500; }
+  .entity-state.on { color: #4caf50; font-weight: 500; }
 
   /* ── Programming summary table (bottom) ── */
   .summary-section {
     background: var(--card-background-color, #fff);
-    border-top: 2px solid var(--divider-color, #e0e0e0);
     flex-shrink: 0;
-    max-height: 180px;
+    min-height: 60px;
     overflow-y: auto;
   }
   .summary-header {
     padding: 6px 16px;
-    background: #f5f5f5;
+    background: var(--secondary-background-color, #f5f5f5);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.6px;
@@ -538,6 +557,9 @@ const STYLES = `
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
   .summary-table {
     width: 100%;
@@ -547,19 +569,19 @@ const STYLES = `
   .summary-table th {
     text-align: left;
     padding: 5px 12px;
-    background: #fafafa;
+    background: var(--secondary-background-color, #f5f5f5);
     border-bottom: 1px solid var(--divider-color, #e0e0e0);
     font-weight: 500;
     color: var(--secondary-text-color, #757575);
     font-size: 11px;
     position: sticky;
-    top: 0;
+    top: 37px;
   }
   .summary-table td {
     padding: 5px 12px;
     border-bottom: 1px solid var(--divider-color, #f0f0f0);
   }
-  .summary-table tr:hover td { background: #f9fdf9; }
+  .summary-table tr:hover td { background: rgba(76,175,80,0.06); }
   .summary-empty {
     padding: 12px 16px;
     font-size: 12px;
@@ -571,8 +593,8 @@ const STYLES = `
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 10px;
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: rgba(76,175,80,0.15);
+    color: #4caf50;
     font-weight: 500;
   }
   .remove-entity {
@@ -704,6 +726,12 @@ class LutronKeypadsPanel extends HTMLElement {
     this._initialized = false;
     this._saveStatus = "";
     this._shadow = this.attachShadow({ mode: "open" });
+
+    // Resizable panel sizes (px)
+    this._sidebarWidth = 220;
+    this._keypayWidth = 186;
+    this._summaryHeight = 180;
+    this._sidebarResizerBound = false;
   }
 
   set hass(hass) {
@@ -753,10 +781,11 @@ class LutronKeypadsPanel extends HTMLElement {
     const root = document.createElement("div");
     root.className = "panel-body";
     root.innerHTML = `
-      <div class="sidebar" id="sidebar">
+      <div class="sidebar" id="sidebar" style="width:${this._sidebarWidth}px">
         <div class="sidebar-header">Lutron Keypads</div>
         <div class="sidebar-list" id="sidebar-list"></div>
       </div>
+      <div class="resize-handle-v" id="sidebar-resizer"></div>
       <div class="main" id="main-content">
         <div class="welcome">
           <div class="welcome-icon">⌨️</div>
@@ -779,6 +808,7 @@ class LutronKeypadsPanel extends HTMLElement {
     this._shadow.appendChild(root);
 
     this._shadow.getElementById("btn-save").addEventListener("click", () => this._saveConfig());
+    this._initResizers();
   }
 
   async _loadEntries() {
@@ -903,12 +933,14 @@ class LutronKeypadsPanel extends HTMLElement {
       </div>
       <div class="prog-body" id="prog-body">
         ${this._renderKeypadColumn(entry, buttons, btnCfg)}
+        <div class="resize-handle-v" id="keypad-resizer"></div>
         <div class="col-right" id="col-right">
           ${this._renderConfigStrip(entry, btnCfg, isRL)}
           ${this._renderExtraConfig(btnCfg, isRL)}
           ${this._renderTreeSection(entry, btnCfg, isRL)}
         </div>
       </div>
+      <div class="resize-handle-h" id="summary-resizer"></div>
       ${this._renderSummarySection(entry, btnCfg)}
     `;
 
@@ -962,7 +994,7 @@ class LutronKeypadsPanel extends HTMLElement {
     const label1 = (this._pendingConfig[this._selectedEntryId] || {})[this._selectedButton]?.label || "";
 
     return `
-      <div class="col-keypad">
+      <div class="col-keypad" style="width:${this._keypayWidth}px">
         <div class="kp-nav">
           <button id="btn-prev" ${prevDisabled} data-prev="${prevNum}">◀</button>
           <span class="btn-num">Button ${this._selectedButton}</span>
@@ -1175,7 +1207,7 @@ class LutronKeypadsPanel extends HTMLElement {
 
     if (!targets.length) {
       return `
-        <div class="summary-section">
+        <div class="summary-section" id="summary-section" style="height:${this._summaryHeight}px">
           <div class="summary-header">
             <span>Programming — Button ${this._selectedButton}</span>
           </div>
@@ -1206,7 +1238,7 @@ class LutronKeypadsPanel extends HTMLElement {
     }).join("");
 
     return `
-      <div class="summary-section">
+      <div class="summary-section" id="summary-section" style="height:${this._summaryHeight}px">
         <div class="summary-header">
           <span>Programming — Button ${this._selectedButton} (${info?.label || at})</span>
         </div>
@@ -1385,6 +1417,90 @@ class LutronKeypadsPanel extends HTMLElement {
     // Set indeterminate on area checkboxes
     shadow.querySelectorAll("[data-indeterminate]").forEach(el => {
       el.indeterminate = true;
+    });
+
+    // Wire up keypad and summary resizers (re-bound each render)
+    this._initResizers();
+  }
+
+  // ── Resize handling ────────────────────────────────────────────
+
+  _initResizers() {
+    const shadow = this._shadow;
+
+    // Sidebar ↔ Main — bound once; the sidebar element persists across renders
+    if (!this._sidebarResizerBound) {
+      const sidebarResizer = shadow.getElementById("sidebar-resizer");
+      const sidebar = shadow.getElementById("sidebar");
+      if (sidebarResizer && sidebar) {
+        this._setupHorizontalResizer(sidebarResizer, sidebar, 140, 450, w => {
+          this._sidebarWidth = w;
+        });
+        this._sidebarResizerBound = true;
+      }
+    }
+
+    // Keypad column ↔ Right column — re-bound each render
+    const keypayResizer = shadow.getElementById("keypad-resizer");
+    const colKeypad = shadow.querySelector(".col-keypad");
+    if (keypayResizer && colKeypad) {
+      this._setupHorizontalResizer(keypayResizer, colKeypad, 120, 380, w => {
+        this._keypayWidth = w;
+      });
+    }
+
+    // Prog-body ↔ Summary — re-bound each render; drag upward expands summary
+    const summaryResizer = shadow.getElementById("summary-resizer");
+    const summarySection = shadow.getElementById("summary-section");
+    if (summaryResizer && summarySection) {
+      this._setupVerticalResizer(summaryResizer, summarySection, 60, 600, h => {
+        this._summaryHeight = h;
+      });
+    }
+  }
+
+  _setupHorizontalResizer(handle, target, min, max, onResize) {
+    let startX, startW;
+    handle.addEventListener("mousedown", e => {
+      startX = e.clientX;
+      startW = target.getBoundingClientRect().width;
+      handle.classList.add("dragging");
+      const onMove = ev => {
+        const w = Math.max(min, Math.min(max, startW + ev.clientX - startX));
+        target.style.width = w + "px";
+        onResize(w);
+      };
+      const onUp = () => {
+        handle.classList.remove("dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+  }
+
+  _setupVerticalResizer(handle, target, min, max, onResize) {
+    let startY, startH;
+    handle.addEventListener("mousedown", e => {
+      startY = e.clientY;
+      startH = target.getBoundingClientRect().height;
+      handle.classList.add("dragging");
+      const onMove = ev => {
+        // Drag upward (negative delta) increases the summary height
+        const h = Math.max(min, Math.min(max, startH + startY - ev.clientY));
+        target.style.height = h + "px";
+        onResize(h);
+      };
+      const onUp = () => {
+        handle.classList.remove("dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      e.preventDefault();
     });
   }
 
