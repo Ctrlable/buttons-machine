@@ -895,6 +895,113 @@ async def _ws_save_keypad_config(hass: HomeAssistant, connection, msg: dict) -> 
     connection.send_result(msg["id"], {"success": True})
 
 
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/discover_keypads",
+})
+@websocket_api.async_response
+async def _ws_discover_keypads(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Return Lutron devices not yet configured as keypads."""
+    from .config_flow import _infer_keypad_type, LUTRON_TYPE_MAP
+
+    already = {
+        str(e.data.get(CONF_DEVICE_SERIAL, ""))
+        for e in hass.config_entries.async_entries(DOMAIN)
+    }
+    devices: list[dict] = []
+    for bridge in _iter_lutron_bridges(hass):
+        try:
+            all_devs: dict = bridge.get_devices()
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("get_devices() failed during discovery: %s", exc)
+            continue
+        for d in all_devs.values():
+            serial = str(d.get("serial", ""))
+            if not serial or serial in already:
+                continue
+            device_type = d.get("type", "")
+            if device_type not in LUTRON_TYPE_MAP:
+                continue
+            devices.append({
+                "serial":      serial,
+                "name":        d.get("name", ""),
+                "area":        d.get("area_name", ""),
+                "type":        device_type,
+                "keypad_type": _infer_keypad_type(device_type),
+                "model":       d.get("model", "") or "",
+                "device_id":   str(d.get("device_id", "")),
+            })
+    connection.send_result(msg["id"], devices)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"):              f"{DOMAIN}/add_keypad",
+    vol.Required("serial"):            str,
+    vol.Required("name"):              str,
+    vol.Optional("device_id",  default=""): str,
+})
+@websocket_api.async_response
+async def _ws_add_keypad(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Create a config entry for a Lutron device selected in the panel."""
+    from .config_flow import _infer_keypad_type, _detect_button_layout
+
+    serial    = msg["serial"]
+    name      = (msg.get("name") or serial).strip()
+    device_id = msg.get("device_id", "")
+
+    device_type = area_name = device_name = model_number = ""
+    for bridge in _iter_lutron_bridges(hass):
+        try:
+            all_devs: dict = bridge.get_devices()
+        except Exception:  # noqa: BLE001
+            continue
+        for d in all_devs.values():
+            if str(d.get("serial", "")) == serial:
+                device_type  = d.get("type", "")
+                area_name    = d.get("area_name", "")
+                device_name  = d.get("name", "")
+                model_number = d.get("model", "") or ""
+                device_id    = str(d.get("device_id", "")) or device_id
+                break
+        if device_type:
+            break
+
+    ktype    = _infer_keypad_type(device_type)
+    detected = _detect_button_layout(
+        hass, serial, ktype,
+        device_name=device_name, area_name=area_name, device_id=device_id,
+    )
+
+    entry_data = {
+        "name":             name,
+        CONF_DEVICE_SERIAL: serial,
+        CONF_DEVICE_NAME:   device_name,
+        CONF_AREA_NAME:     area_name,
+        CONF_KEYPAD_TYPE:   ktype,
+        "lutron_type":      device_type,
+        "model_number":     model_number,
+        "device_id":        device_id,
+        **detected,
+    }
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "panel"},
+        data=entry_data,
+    )
+
+    if result.get("type") == "create_entry":
+        entry = result.get("result")
+        connection.send_result(msg["id"], {
+            "success":  True,
+            "entry_id": entry.entry_id if entry else "",
+        })
+    elif result.get("type") == "abort":
+        reason = result.get("reason", "unknown")
+        connection.send_error(msg["id"], reason, f"Could not add keypad: {reason}")
+    else:
+        connection.send_error(msg["id"], "flow_error", "Unexpected flow result")
+
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 async def _register_panel_once(hass: HomeAssistant) -> None:
@@ -939,6 +1046,8 @@ async def _register_panel_once(hass: HomeAssistant) -> None:
 
     websocket_api.async_register_command(hass, _ws_get_entries)
     websocket_api.async_register_command(hass, _ws_save_keypad_config)
+    websocket_api.async_register_command(hass, _ws_discover_keypads)
+    websocket_api.async_register_command(hass, _ws_add_keypad)
 
     hass.data.setdefault(DOMAIN, {})["_panel_registered"] = True
 

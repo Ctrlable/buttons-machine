@@ -744,6 +744,20 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_panel(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Create an entry directly from the programming panel (no interactive flow)."""
+        if not user_input:
+            return self.async_abort(reason="no_data")
+        serial = str(user_input.get(CONF_DEVICE_SERIAL, "")).strip()
+        if not serial:
+            return self.async_abort(reason="no_serial")
+        await self.async_set_unique_id(serial)
+        self._abort_if_unique_id_configured()
+        name = str(user_input.pop("name", serial)).strip() or serial
+        return self.async_create_entry(title=name, data=user_input)
+
     @staticmethod
     @callback
     def async_get_options_flow(

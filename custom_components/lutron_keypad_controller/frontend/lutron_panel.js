@@ -141,10 +141,28 @@ const STYLES = `
     display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
   }
   .sidebar-header {
-    padding: 12px 14px 8px; font-size: 11px; font-weight: 600;
+    padding: 10px 14px 8px; font-size: 11px; font-weight: 600;
     letter-spacing: 1px; text-transform: uppercase; color: #81c784;
     border-bottom: 1px solid #2d4a35;
+    display: flex; align-items: center; justify-content: space-between;
   }
+  .btn-add-keypad {
+    background: rgba(76,175,80,0.2); border: 1px solid #4caf50; color: #81c784;
+    border-radius: 4px; width: 22px; height: 22px; font-size: 16px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: background 0.15s;
+  }
+  .btn-add-keypad:hover { background: rgba(76,175,80,0.4); }
+  .sidebar-search-wrap {
+    padding: 6px 10px; border-bottom: 1px solid #2d4a35;
+  }
+  .sidebar-search-wrap input {
+    width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3);
+    border: 1px solid #2d4a35; border-radius: 4px; color: #c8e6c9;
+    padding: 4px 8px; font-size: 12px; outline: none;
+  }
+  .sidebar-search-wrap input::placeholder { color: #4a6a50; }
+  .sidebar-search-wrap input:focus { border-color: #4caf50; }
   .sidebar-list { flex: 1; overflow-y: auto; padding: 4px 0; }
   .sidebar-area {
     padding: 6px 14px 2px; font-size: 10px; letter-spacing: 0.8px;
@@ -236,8 +254,110 @@ const STYLES = `
   }
   .kp-btn.raise-lower:hover { color: #aaa; background: #333; }
   .kp-btn.raise-lower.selected { background: #1b5e20; color: #81c784; }
-  .kp-rl-row { display: flex; gap: 4px; width: 100%; margin-top: 2px; }
-  .kp-rl-row .kp-btn { flex: 1; }
+  .kp-btn { position: relative; }
+  .kp-rl-row { display: flex; gap: 0; width: 100%; margin-top: 4px; border-radius: 4px; overflow: hidden; border: 1px solid #3a3a3a; }
+  .kp-rl-row .kp-btn { flex: 1; border-radius: 0; border: none; border-right: 1px solid #3a3a3a; min-height: 20px; padding: 3px 2px; }
+  .kp-rl-row .kp-btn:last-child { border-right: none; }
+
+  /* ── Keypad type visual styles ── */
+  .keypad-type-seetouch .kp-btn:not(.raise-lower),
+  .keypad-type-seetouch_hybrid .kp-btn:not(.raise-lower) {
+    padding-left: 14px; justify-content: flex-start; min-height: 30px;
+  }
+  .keypad-type-seetouch .kp-btn:not(.raise-lower)::before,
+  .keypad-type-seetouch_hybrid .kp-btn:not(.raise-lower)::before {
+    content: ''; position: absolute; left: 5px; top: 50%; transform: translateY(-50%);
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #1a3d2b; border: 1px solid #2d5a38;
+  }
+  .keypad-type-seetouch .kp-btn.configured:not(.raise-lower)::before,
+  .keypad-type-seetouch_hybrid .kp-btn.configured:not(.raise-lower)::before {
+    background: #4caf50; border-color: #4caf50; box-shadow: 0 0 4px #4caf50;
+  }
+  .keypad-type-seetouch .kp-btn.selected:not(.raise-lower)::before,
+  .keypad-type-seetouch_hybrid .kp-btn.selected:not(.raise-lower)::before {
+    background: #81c784; border-color: #81c784;
+  }
+  .keypad-type-palladiom .kp-btn:not(.raise-lower) { border-radius: 3px; aspect-ratio: 2/1; min-height: 28px; }
+  .keypad-type-palladiom .kp-btn.configured::after { display: none; }
+  .keypad-type-palladiom .kp-btn.configured { border-bottom: 2px solid #4caf50; }
+  .keypad-type-pico .keypad-device { border-radius: 18px; padding: 10px 10px; background: #1e1e1e; }
+  .keypad-type-pico .kp-btn { border-radius: 50%; aspect-ratio: 1; min-height: 32px; width: 32px; max-width: 100%; margin: 0 auto; }
+  .keypad-type-pico .kp-col { align-items: center; }
+  .keypad-type-tabletop .kp-btn { border-radius: 3px; min-height: 26px; font-size: 8px; }
+  .keypad-type-alisee .kp-btn { border-radius: 3px; aspect-ratio: 2/1; min-height: 28px; }
+
+  /* ── Entity search ── */
+  .tree-search-wrap { padding: 6px 10px 0; }
+  .tree-search-wrap input {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--divider-color, #ccc);
+    border-radius: 4px; padding: 5px 10px; font-size: 12px; background: var(--card-background-color,#fff);
+    color: var(--primary-text-color,#212121); outline: none;
+  }
+  .tree-search-wrap input:focus { border-color: #4caf50; }
+
+  /* ── Modal / Add Keypad dialog ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--card-background-color, #fff); border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4); width: 480px; max-width: 95vw;
+    max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--divider-color,#eee);
+    font-size: 16px; font-weight: 600; color: var(--primary-text-color,#212121);
+    flex-shrink: 0;
+  }
+  .modal-close {
+    background: none; border: none; font-size: 18px; cursor: pointer; color: #888; padding: 0 4px;
+  }
+  .modal-close:hover { color: var(--primary-text-color,#212121); }
+  .modal-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .modal-loading, .modal-empty { text-align: center; color: var(--secondary-text-color,#757575); padding: 24px 0; }
+  .modal-error { color: #e53935; font-size: 13px; margin-top: 10px; }
+  .modal-hint { font-size: 13px; color: var(--secondary-text-color,#757575); margin: 0 0 10px; }
+  .modal-devices { display: flex; flex-direction: column; gap: 8px; }
+  .device-card {
+    border: 1px solid var(--divider-color,#eee); border-radius: 8px; padding: 10px 14px;
+    cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 3px;
+  }
+  .device-card:hover { border-color: #4caf50; background: rgba(76,175,80,0.05); }
+  .device-card.selected { border-color: #4caf50; background: rgba(76,175,80,0.1); box-shadow: 0 0 0 2px rgba(76,175,80,0.3); }
+  .device-card-main { display: flex; align-items: baseline; gap: 8px; }
+  .device-card-name { font-size: 14px; font-weight: 500; color: var(--primary-text-color,#212121); }
+  .device-card-area { font-size: 12px; color: var(--secondary-text-color,#757575); }
+  .device-card-meta { display: flex; gap: 8px; }
+  .device-card-type {
+    font-size: 10px; background: rgba(76,175,80,0.15); color: #2e7d32;
+    padding: 1px 6px; border-radius: 3px; text-transform: capitalize;
+  }
+  .device-card-model { font-size: 10px; color: var(--secondary-text-color,#9e9e9e); font-family: monospace; }
+  .modal-add-form { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--divider-color,#eee); }
+  .modal-add-form.hidden { display: none; }
+  .modal-add-form label { font-size: 12px; font-weight: 500; color: var(--secondary-text-color,#757575); display: block; margin-bottom: 4px; }
+  .modal-add-form input {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--divider-color,#ccc);
+    border-radius: 4px; padding: 8px 10px; font-size: 14px; outline: none;
+    background: var(--card-background-color,#fff); color: var(--primary-text-color,#212121);
+  }
+  .modal-add-form input:focus { border-color: #4caf50; }
+  .modal-form-actions { display: flex; gap: 10px; margin-top: 12px; justify-content: flex-end; }
+  .modal-btn-cancel {
+    background: none; border: 1px solid var(--divider-color,#ccc); border-radius: 4px;
+    padding: 7px 16px; cursor: pointer; font-size: 13px; color: var(--primary-text-color,#212121);
+  }
+  .modal-btn-cancel:hover { background: rgba(0,0,0,0.05); }
+  .modal-btn-confirm {
+    background: #2e7d32; color: #fff; border: none; border-radius: 4px;
+    padding: 7px 20px; cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  .modal-btn-confirm:hover { background: #388e3c; }
+  .modal-btn-confirm:disabled { background: #888; cursor: default; }
 
   /* ── Engraving ── */
   .engraving-section { width: 100%; display: flex; flex-direction: column; gap: 4px; }
@@ -518,6 +638,9 @@ class LutronKeypadsPanel extends HTMLElement {
     this._dirty = {};
     this._expandedAreas = new Set();
     this._filterArea = "";
+    this._sidebarSearch = "";
+    this._entitySearch = "";
+    this._selectedDiscoveryDevice = null;
     this._initialized = false;
     this._shadow = this.attachShadow({ mode: "open" });
 
@@ -567,7 +690,13 @@ class LutronKeypadsPanel extends HTMLElement {
     root.className = "panel-body";
     root.innerHTML = `
       <div class="sidebar" id="sidebar" style="width:${this._sidebarWidth}px">
-        <div class="sidebar-header">Lutron Keypads</div>
+        <div class="sidebar-header">
+          <span>Lutron Keypads</span>
+          <button class="btn-add-keypad" id="btn-add-keypad" title="Add Keypad">+</button>
+        </div>
+        <div class="sidebar-search-wrap">
+          <input type="search" id="sidebar-search" placeholder="Search keypads…">
+        </div>
         <div class="sidebar-list" id="sidebar-list"></div>
       </div>
       <div class="resize-handle-v" id="sidebar-resizer"></div>
@@ -576,6 +705,21 @@ class LutronKeypadsPanel extends HTMLElement {
           <div class="welcome-icon">⌨️</div>
           <h2>Lutron Keypad Programming</h2>
           <p>Select a keypad from the left to begin programming</p>
+        </div>
+      </div>
+    `;
+
+    const modal = document.createElement("div");
+    modal.className = "modal-overlay hidden";
+    modal.id = "modal-overlay";
+    modal.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <span>Add Keypad</span>
+          <button class="modal-close" id="modal-close">✕</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+          <div class="modal-loading">Discovering keypads…</div>
         </div>
       </div>
     `;
@@ -591,7 +735,20 @@ class LutronKeypadsPanel extends HTMLElement {
 
     this._shadow.appendChild(header);
     this._shadow.appendChild(root);
+    this._shadow.appendChild(modal);
+
     this._shadow.getElementById("btn-save").addEventListener("click", () => this._saveConfig());
+
+    this._shadow.getElementById("sidebar-search").addEventListener("input", e => {
+      this._sidebarSearch = e.target.value;
+      this._renderSidebar();
+    });
+
+    this._shadow.getElementById("btn-add-keypad").addEventListener("click", () => this._showAddDialog());
+
+    this._shadow.getElementById("modal-close").addEventListener("click", () => this._closeDialog());
+    modal.addEventListener("click", e => { if (e.target === modal) this._closeDialog(); });
+
     this._initResizers();
   }
 
@@ -611,12 +768,27 @@ class LutronKeypadsPanel extends HTMLElement {
     if (!list) return;
 
     if (this._entries.length === 0) {
-      list.innerHTML = `<div style="padding:14px;color:#81c784;font-size:12px;">No keypads configured.<br>Add one via Settings → Integrations.</div>`;
+      list.innerHTML = `<div style="padding:14px;color:#81c784;font-size:12px;">No keypads configured.<br>Click <b>+</b> above to add one.</div>`;
+      return;
+    }
+
+    const q = (this._sidebarSearch || "").toLowerCase().trim();
+    const filtered = q
+      ? this._entries.filter(e => {
+          const name  = (e.title || "").toLowerCase();
+          const area  = (e.data?.area_name || "").toLowerCase();
+          const ktype = (e.data?.keypad_type || "").toLowerCase();
+          return name.includes(q) || area.includes(q) || ktype.includes(q);
+        })
+      : this._entries;
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<div style="padding:14px;color:#81c784;font-size:12px;">No keypads match "${this._esc(this._sidebarSearch)}".</div>`;
       return;
     }
 
     const byArea = {};
-    for (const entry of this._entries) {
+    for (const entry of filtered) {
       const area = entry.data?.area_name || "";
       if (!byArea[area]) byArea[area] = [];
       byArea[area].push(entry);
@@ -800,7 +972,7 @@ class LutronKeypadsPanel extends HTMLElement {
           <span class="btn-num">Button ${this._selectedButton}</span>
           <button id="btn-next" ${nextDisabled} data-next="${nextNum}">▶</button>
         </div>
-        <div class="keypad-device">
+        <div class="keypad-device keypad-type-${ktype}">
           <div class="kp-logo">LUTRON</div>
           <div class="kp-main-buttons">${colsHtml}</div>
           ${rlHtml}
@@ -903,7 +1075,11 @@ class LutronKeypadsPanel extends HTMLElement {
       return `<div class="tree-section"><div class="tree-empty">${msg}</div></div>`;
     }
 
-    const entities = this._getEntitiesForAction(at);
+    const esq = (this._entitySearch || "").toLowerCase().trim();
+    const allEntities = this._getEntitiesForAction(at);
+    const entities = esq
+      ? allEntities.filter(e => e.name.toLowerCase().includes(esq) || e.entity_id.toLowerCase().includes(esq))
+      : allEntities;
     const byArea = this._groupByArea(entities);
     const areaKeys = Object.keys(byArea).sort((a, b) => {
       if (a === "_none") return 1; if (b === "_none") return -1;
@@ -947,6 +1123,9 @@ class LutronKeypadsPanel extends HTMLElement {
 
     return `
       <div class="tree-section">
+        <div class="tree-search-wrap">
+          <input type="search" id="entity-search" placeholder="Search entities…" value="${this._esc(this._entitySearch)}">
+        </div>
         <div class="tree-filter-bar">
           <label>Show in:</label>
           <select id="sel-filter-area">
@@ -1177,6 +1356,15 @@ class LutronKeypadsPanel extends HTMLElement {
     if (inpSG) inpSG.addEventListener("change", () => this._setBtnProp("scene_group", inpSG.value.trim()));
     const inpLedEnt = shadow.getElementById("inp-led-entity");
     if (inpLedEnt) inpLedEnt.addEventListener("change", () => this._setBtnProp("led_entity", inpLedEnt.value.trim()));
+
+    // Entity search
+    const entSearch = shadow.getElementById("entity-search");
+    if (entSearch) {
+      entSearch.addEventListener("input", e => {
+        this._entitySearch = e.target.value;
+        this._renderMain();
+      });
+    }
 
     // Area filter
     const selArea = shadow.getElementById("sel-filter-area");
@@ -1468,6 +1656,117 @@ class LutronKeypadsPanel extends HTMLElement {
       console.error("LutronPanel: save failed", e);
       if (statusEl) statusEl.textContent = "⚠ Save failed";
       if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+
+  // ── Add Keypad dialog ─────────────────────────────────────────
+
+  async _showAddDialog() {
+    const overlay = this._shadow.getElementById("modal-overlay");
+    const body = this._shadow.getElementById("modal-body");
+    if (!overlay || !body) return;
+    overlay.classList.remove("hidden");
+    this._selectedDiscoveryDevice = null;
+    body.innerHTML = `<div class="modal-loading">Discovering keypads…</div>`;
+    try {
+      const devices = await this._hass.callWS({ type: "lutron_keypad_controller/discover_keypads" });
+      body.innerHTML = this._renderDiscoveryBody(devices);
+      this._attachDialogListeners(devices);
+    } catch (e) {
+      body.innerHTML = `<div class="modal-error">Discovery failed: ${this._esc(String(e?.message || e))}</div>`;
+    }
+  }
+
+  _closeDialog() {
+    const overlay = this._shadow.getElementById("modal-overlay");
+    if (overlay) overlay.classList.add("hidden");
+    this._selectedDiscoveryDevice = null;
+  }
+
+  _renderDiscoveryBody(devices) {
+    if (!devices || devices.length === 0) {
+      return `<div class="modal-empty">No new keypads found. All Lutron devices may already be configured.</div>`;
+    }
+    const cards = devices.map((d, i) => `
+      <div class="device-card" data-di="${i}">
+        <div class="device-card-main">
+          <span class="device-card-name">${this._esc(d.name || d.serial)}</span>
+          <span class="device-card-area">${this._esc(d.area || "")}</span>
+        </div>
+        <div class="device-card-meta">
+          <span class="device-card-type">${this._esc(d.type || "")}</span>
+          ${d.model ? `<span class="device-card-model">${this._esc(d.model)}</span>` : ""}
+        </div>
+      </div>`).join("");
+    return `
+      <p class="modal-hint">Select a keypad to add:</p>
+      <div class="modal-devices">${cards}</div>
+      <div class="modal-add-form hidden" id="modal-add-form">
+        <label>Display Name</label>
+        <input id="modal-name-input" type="text" placeholder="e.g. Living Room Main">
+        <div class="modal-error hidden" id="modal-error"></div>
+        <div class="modal-form-actions">
+          <button class="modal-btn-cancel" id="modal-btn-cancel">Cancel</button>
+          <button class="modal-btn-confirm" id="modal-btn-confirm">Add Keypad</button>
+        </div>
+      </div>`;
+  }
+
+  _attachDialogListeners(devices) {
+    const shadow = this._shadow;
+    shadow.querySelectorAll(".device-card").forEach((card, i) => {
+      card.addEventListener("click", () => {
+        shadow.querySelectorAll(".device-card").forEach(c => c.classList.remove("selected"));
+        card.classList.add("selected");
+        this._selectedDiscoveryDevice = devices[i];
+        const form = shadow.getElementById("modal-add-form");
+        const nameInput = shadow.getElementById("modal-name-input");
+        if (form) form.classList.remove("hidden");
+        if (nameInput) { nameInput.value = devices[i].name || ""; nameInput.focus(); nameInput.select(); }
+      });
+    });
+    const cancelBtn = shadow.getElementById("modal-btn-cancel");
+    if (cancelBtn) cancelBtn.addEventListener("click", () => this._closeDialog());
+    const confirmBtn = shadow.getElementById("modal-btn-confirm");
+    if (confirmBtn) confirmBtn.addEventListener("click", () => this._confirmAddKeypad());
+    const nameInput = shadow.getElementById("modal-name-input");
+    if (nameInput) {
+      nameInput.addEventListener("keydown", e => { if (e.key === "Enter") this._confirmAddKeypad(); });
+    }
+  }
+
+  async _confirmAddKeypad() {
+    const device = this._selectedDiscoveryDevice;
+    if (!device) return;
+    const shadow = this._shadow;
+    const nameInput = shadow.getElementById("modal-name-input");
+    const name = (nameInput?.value || "").trim() || device.name || device.serial;
+    const errorEl = shadow.getElementById("modal-error");
+    const confirmBtn = shadow.getElementById("modal-btn-confirm");
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (errorEl) errorEl.classList.add("hidden");
+    try {
+      await this._hass.callWS({
+        type: "lutron_keypad_controller/add_keypad",
+        serial: device.serial,
+        name,
+        area_name:      device.area || "",
+        keypad_type:    device.type || "generic",
+        model_number:   device.model || "",
+        button_numbers: device.button_numbers || [],
+        raise_button:   device.raise_button ?? null,
+        lower_button:   device.lower_button ?? null,
+        button_names:   device.button_names || {},
+      });
+      this._closeDialog();
+      await this._loadEntries();
+      this._renderSidebar();
+    } catch (e) {
+      if (errorEl) {
+        errorEl.textContent = String(e?.message || e || "Add failed");
+        errorEl.classList.remove("hidden");
+      }
+      if (confirmBtn) confirmBtn.disabled = false;
     }
   }
 
