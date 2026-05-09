@@ -1034,6 +1034,22 @@ async def _ws_add_keypad(hass: HomeAssistant, connection, msg: dict) -> None:
         connection.send_error(msg["id"], "flow_error", "Unexpected flow result")
 
 
+@websocket_api.websocket_command({
+    vol.Required("type"):     f"{DOMAIN}/delete_keypad",
+    vol.Required("entry_id"): str,
+})
+@websocket_api.async_response
+async def _ws_delete_keypad(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Remove a keypad config entry entirely."""
+    entry_id = msg["entry_id"]
+    entry = hass.config_entries.async_get_entry(entry_id)
+    if entry is None or entry.domain != DOMAIN:
+        connection.send_error(msg["id"], "not_found", f"Entry '{entry_id}' not found")
+        return
+    await hass.config_entries.async_remove(entry_id)
+    connection.send_result(msg["id"], {"success": True})
+
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 async def _register_panel_once(hass: HomeAssistant) -> None:
@@ -1080,6 +1096,7 @@ async def _register_panel_once(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, _ws_save_keypad_config)
     websocket_api.async_register_command(hass, _ws_discover_keypads)
     websocket_api.async_register_command(hass, _ws_add_keypad)
+    websocket_api.async_register_command(hass, _ws_delete_keypad)
 
     hass.data.setdefault(DOMAIN, {})["_panel_registered"] = True
 

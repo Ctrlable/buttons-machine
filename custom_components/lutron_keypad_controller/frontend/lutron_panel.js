@@ -183,6 +183,14 @@ const STYLES = `
     font-size: 10px; color: #6a8f70; font-family: monospace;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .btn-delete-kp {
+    background: none; border: none; color: #ef5350; cursor: pointer;
+    font-size: 13px; padding: 2px 4px; opacity: 0; transition: opacity 0.15s;
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    border-radius: 3px;
+  }
+  .sidebar-entry:hover .btn-delete-kp { opacity: 0.6; }
+  .btn-delete-kp:hover { opacity: 1 !important; background: rgba(239,83,80,0.1); }
 
   /* ── Main area ── */
   .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -454,16 +462,45 @@ const STYLES = `
   .area-entities { display: none; background: var(--secondary-background-color, #fafafa); }
   .area-entities.open { display: block; }
   .entity-row {
-    display: flex; align-items: center; padding: 5px 16px 5px 38px; gap: 8px;
+    display: flex; align-items: center; flex-wrap: wrap; padding: 5px 16px 5px 38px; gap: 6px;
     cursor: pointer; transition: background 0.1s; border-top: 1px solid var(--divider-color, #f0f0f0);
   }
   .entity-row:hover { background: rgba(76,175,80,0.06); }
   .entity-row.selected { background: rgba(76,175,80,0.12); }
   .entity-check { accent-color: #2e7d32; width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
   .entity-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
-  .entity-name { flex: 1; font-size: 13px; }
-  .entity-state { font-size: 11px; color: var(--secondary-text-color, #757575); text-align: right; min-width: 50px; }
+  .entity-name { flex: 1; font-size: 13px; min-width: 100px; }
+  .entity-state { font-size: 11px; color: var(--secondary-text-color, #757575); text-align: right; min-width: 40px; }
   .entity-state.on { color: #4caf50; font-weight: 500; }
+
+  /* ── Inline entity settings (tree panel) ── */
+  .ent-row-settings {
+    display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
+  }
+  .ent-row-inp {
+    width: 54px; padding: 2px 4px; border: 1px solid var(--divider-color, #ccc);
+    border-radius: 3px; font-size: 10px; background: var(--card-background-color, #fff);
+    color: var(--primary-text-color); text-align: center;
+  }
+  .ent-row-inp:focus { outline: none; border-color: #4caf50; }
+  .ent-row-inp::placeholder { color: var(--secondary-text-color, #bbb); }
+  .ent-row-inp.has-val { border-color: #a5d6a7; background: rgba(76,175,80,0.06); }
+  .ent-row-inp-label {
+    font-size: 9px; color: var(--secondary-text-color, #aaa); text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .ent-inp-group { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+
+  /* ── Area bulk-set row ── */
+  .area-bulk-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 6px 16px 6px 42px;
+    background: rgba(76,175,80,0.04); border-top: 1px solid var(--divider-color, #f0f0f0);
+    border-bottom: 1px solid var(--divider-color, #ebebeb);
+  }
+  .area-bulk-label {
+    font-size: 10px; font-weight: 600; color: var(--secondary-text-color, #757575);
+    text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
+  }
 
   /* ── Programming summary (bottom) ── */
   .summary-section {
@@ -892,22 +929,36 @@ class LutronKeypadsPanel extends HTMLElement {
         const ktype = (entry.data?.keypad_type || "generic").replace(/_/g, " ");
         const model = entry.data?.model_number || "";
         html += `
-          <div class="sidebar-entry ${active}" data-entry="${entry.entry_id}">
+          <div class="sidebar-entry ${active}" data-entry="${entry.entry_id}" style="position:relative">
             <span class="entry-name">${entry.title}</span>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
               <span class="entry-type">${ktype}</span>
               ${model ? `<span class="entry-model">${this._esc(model)}</span>` : ""}
             </div>
+            <button class="btn-delete-kp" data-delete-entry="${entry.entry_id}" title="Delete keypad">🗑</button>
           </div>`;
       }
     }
     list.innerHTML = html;
 
     list.querySelectorAll(".sidebar-entry").forEach(el => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".btn-delete-kp")) return;
         this._selectEntry(el.dataset.entry);
         this._renderSidebar();
         this._renderMain();
+      });
+    });
+
+    list.querySelectorAll(".btn-delete-kp").forEach(el => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const entryId = el.dataset.deleteEntry;
+        const entry = this._getEntry(entryId);
+        const name = entry?.title || entryId;
+        if (confirm(`Delete keypad "${name}"? This cannot be undone.`)) {
+          this._deleteKeypad(entryId);
+        }
       });
     });
   }
@@ -1181,7 +1232,8 @@ class LutronKeypadsPanel extends HTMLElement {
           <select id="sel-action-type">${atOptions}</select>
         </div>
       </div>`;
-    return actionStrip + this._renderTreeSection(entry, btnCfg, false);
+    const showSettings = at === "entity_toggle";
+    return actionStrip + this._renderTreeSection(entry, btnCfg, false, showSettings);
   }
 
   _renderOffLevelTab(entry, btnCfg) {
@@ -1337,7 +1389,7 @@ class LutronKeypadsPanel extends HTMLElement {
 
   // ── Entity tree ────────────────────────────────────────────────
 
-  _renderTreeSection(entry, btnCfg, isRL) {
+  _renderTreeSection(entry, btnCfg, isRL, showSettings = false) {
     const at = btnCfg.action_type || "none";
     const info = ACTION_TYPES[at];
     const domains = info?.domains || [];
@@ -1364,6 +1416,7 @@ class LutronKeypadsPanel extends HTMLElement {
 
     const isMulti = info?.multi || false;
     const selectedTargets = this._getSelectedTargets(btnCfg);
+    const entSettings = showSettings ? (btnCfg.entity_settings || {}) : {};
 
     const areaOpts = areaKeys
       .filter(k => k !== "_none")
@@ -1390,7 +1443,8 @@ class LutronKeypadsPanel extends HTMLElement {
             <span class="area-count">${selCount > 0 ? selCount + " of " : ""}${areaEntities.length} ${selCount > 0 ? "selected" : "available"}</span>
           </div>
           <div class="area-entities ${expanded ? "open" : ""}" id="area-ents-${areaId}">
-            ${areaEntities.map(ent => this._renderEntityRow(ent, selectedTargets, isMulti)).join("")}
+            ${showSettings && expanded ? this._renderAreaBulkRow(areaId, areaEntities, selectedTargets) : ""}
+            ${areaEntities.map(ent => this._renderEntityRow(ent, selectedTargets, isMulti, entSettings, showSettings)).join("")}
           </div>
         </div>`;
     }
@@ -1414,23 +1468,70 @@ class LutronKeypadsPanel extends HTMLElement {
       </div>`;
   }
 
-  _renderEntityRow(ent, selectedTargets, isMulti) {
+  _renderEntityRow(ent, selectedTargets, isMulti, entSettings = {}, showSettings = false) {
     const sel = selectedTargets.includes(ent.entity_id);
-    const stateVal = this._hass.states?.[ent.entity_id]?.state;
-    const attrs = this._hass.states?.[ent.entity_id]?.attributes || {};
-    const stateLabel = entityStateLabel(ent.entity_id, stateVal, attrs);
-    const icon = entityIcon(ent.entity_id, stateVal);
+    const eid = ent.entity_id;
+    const stateVal = this._hass.states?.[eid]?.state;
+    const attrs = this._hass.states?.[eid]?.attributes || {};
+    const stateLabel = entityStateLabel(eid, stateVal, attrs);
+    const icon = entityIcon(eid, stateVal);
     const isOn = stateVal && !["off","closed","unavailable","unknown"].includes(stateVal);
     const inputType = isMulti ? "checkbox" : "radio";
     const inputName = isMulti ? "" : `name="radio-entity-${this._selectedEntryId}-${this._selectedButton}"`;
 
+    let settingsHtml = "";
+    if (showSettings && sel && eid.startsWith("light.")) {
+      const caps = getLightCaps(this._hass, eid);
+      const ent_s = entSettings[eid] || {};
+      const mkInp = (key, min, max, step, placeholder, title) => {
+        const v = ent_s[key] > 0 ? ent_s[key] : "";
+        const hasVal = v !== "";
+        return `<div class="ent-inp-group">
+          <input class="ent-row-inp${hasVal ? " has-val" : ""}" type="number"
+            min="${min}" max="${max}" step="${step}"
+            data-entity="${eid}" data-key="${key}"
+            value="${v}" placeholder="${placeholder}" title="${title}">
+          <span class="ent-row-inp-label">${placeholder}</span>
+        </div>`;
+      };
+      settingsHtml = `<span class="ent-row-settings">`;
+      if (caps?.brightness) settingsHtml += mkInp("brightness", 1, 100, 1,  "bri%", "Target brightness %");
+      if (caps?.colorTemp)  settingsHtml += mkInp("color_temp", 1500, 9000, 50, "CT K", "Color temp (Kelvin)");
+      settingsHtml += mkInp("fade",  0, 60, 0.5, "fade", "Fade time (seconds)");
+      settingsHtml += mkInp("delay", 0, 30, 0.5, "dly",  "Delay before command (seconds)");
+      settingsHtml += `</span>`;
+    }
+
     return `
-      <div class="entity-row ${sel ? "selected" : ""}" data-entity="${ent.entity_id}">
+      <div class="entity-row ${sel ? "selected" : ""}" data-entity="${eid}">
         <input type="${inputType}" ${inputName} class="entity-check" ${sel ? "checked" : ""}
-               data-entity-check="${ent.entity_id}">
+               data-entity-check="${eid}">
         <span class="entity-icon">${icon}</span>
         <span class="entity-name">${this._esc(ent.name)}</span>
         <span class="entity-state ${isOn ? "on" : ""}">${stateLabel}</span>
+        ${settingsHtml}
+      </div>`;
+  }
+
+  _renderAreaBulkRow(areaId, areaEntities, selectedTargets) {
+    const selLights = areaEntities.filter(e =>
+      e.entity_id.startsWith("light.") && selectedTargets.includes(e.entity_id)
+    );
+    if (selLights.length === 0) return "";
+    const count = selLights.length;
+    const mkBulk = (key, min, max, step, placeholder, title) =>
+      `<div class="ent-inp-group">
+        <input class="ent-row-inp bulk-inp" type="number" min="${min}" max="${max}" step="${step}"
+          data-area-bulk="${areaId}" data-key="${key}" placeholder="${placeholder}" title="${title}">
+        <span class="ent-row-inp-label">${placeholder}</span>
+      </div>`;
+    return `
+      <div class="area-bulk-row">
+        <span class="area-bulk-label">Set ${count} light${count > 1 ? "s" : ""}:</span>
+        ${mkBulk("brightness", 1,    100,  1,    "bri%", "Set brightness for all selected lights")}
+        ${mkBulk("color_temp", 1500, 9000, 50,   "CT K", "Set color temp for all selected lights")}
+        ${mkBulk("fade",       0,    60,   0.5,  "fade", "Set fade time for all selected lights")}
+        ${mkBulk("delay",      0,    30,   0.5,  "dly",  "Set delay for all selected lights")}
       </div>`;
   }
 
@@ -1810,6 +1911,35 @@ class LutronKeypadsPanel extends HTMLElement {
       });
     });
 
+    // Inline entity setting inputs in tree panel (Press On tab)
+    shadow.querySelectorAll(".ent-row-inp:not(.bulk-inp)").forEach(el => {
+      el.addEventListener("change", () => {
+        const val = parseFloat(el.value) || 0;
+        this._setEntitySetting(el.dataset.entity, el.dataset.key, val > 0 ? val : null);
+        el.classList.toggle("has-val", val > 0);
+      });
+    });
+
+    // Area bulk inputs — apply value to all selected lights in the area
+    shadow.querySelectorAll(".bulk-inp").forEach(el => {
+      el.addEventListener("change", () => {
+        const areaId = el.dataset.areaBulk;
+        const key = el.dataset.key;
+        const val = parseFloat(el.value) || 0;
+        const pending = this._pendingConfig[this._selectedEntryId] || {};
+        const bc = pending[this._selectedButton] || {};
+        const selectedTargets = this._getSelectedTargets(bc);
+        const at = bc.action_type || "none";
+        const entities = this._getEntitiesForAction(at);
+        entities
+          .filter(e => e.entity_id.startsWith("light.") && selectedTargets.includes(e.entity_id)
+            && (resolveAreaId(e.entity_id, this._hass) || "_none") === areaId)
+          .forEach(e => this._setEntitySetting(e.entity_id, key, val > 0 ? val : null));
+        el.value = "";
+        this._renderMain();
+      });
+    });
+
     // Set indeterminate state on area checkboxes
     shadow.querySelectorAll("[data-indeterminate]").forEach(el => { el.indeterminate = true; });
 
@@ -2059,6 +2189,23 @@ class LutronKeypadsPanel extends HTMLElement {
   }
 
   // ── Add Keypad dialog ─────────────────────────────────────────
+
+  async _deleteKeypad(entryId) {
+    try {
+      await this._hass.callWS({ type: "lutron_keypad_controller/delete_keypad", entry_id: entryId });
+      delete this._pendingConfig[entryId];
+      delete this._dirty[entryId];
+      if (this._selectedEntryId === entryId) {
+        this._selectedEntryId = null;
+        this._shadow.getElementById("header-subtitle").textContent = "Keypad Programming";
+      }
+      await this._loadEntries();
+      this._renderSidebar();
+      this._renderMain();
+    } catch (e) {
+      alert("Delete failed: " + (e?.message || String(e)));
+    }
+  }
 
   async _showAddDialog() {
     const overlay = this._shadow.getElementById("modal-overlay");
