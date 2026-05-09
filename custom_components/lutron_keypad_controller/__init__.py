@@ -94,7 +94,8 @@ from typing import Any
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components import frontend, websocket_api
-from homeassistant.core import HomeAssistant, Event, callback
+from homeassistant.core import HomeAssistant, Event, CoreState, callback
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
@@ -312,6 +313,14 @@ async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -
     if not serial:
         return
 
+    from .const import KEYPAD_LAYOUTS, KEYPAD_GENERIC
+    from .config_flow import _infer_keypad_type
+    # Re-infer from the raw Lutron type string — the stored keypad_type may be stale
+    # if the type map was corrected after the entry was first created.
+    lutron_type = entry.data.get("lutron_type", "")
+    ktype = _infer_keypad_type(lutron_type) if lutron_type else entry.data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC)
+    _, has_raise_lower = KEYPAD_LAYOUTS.get(ktype, KEYPAD_LAYOUTS[KEYPAD_GENERIC])
+
     def _strip_eng(full_name: str, area: str, dev: str) -> str:
         name = full_name.strip()
         for prefix in [f"{area} {dev}", dev, area]:
@@ -353,32 +362,34 @@ async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -
             lc      = raw.lower()
             has_led = btn.get("button_led") is not None
 
-            # Name-based detection is authoritative
-            if lc.endswith((" raise", "-raise", " up", "-up")) or _RAISE_RL_RE.search(raw):
-                raise_btn = bnum
-            elif lc.endswith((" lower", "-lower", " down", "-down")) or _LOWER_RL_RE.search(raw):
-                lower_btn = bnum
-            elif not has_led:
-                # No LED = no scene indicator = raise/lower physical button
-                no_led_buttons.append(bnum)
+            if has_raise_lower:
+                # Name-based detection is authoritative
+                if lc.endswith((" raise", "-raise", " up", "-up")) or _RAISE_RL_RE.search(raw):
+                    raise_btn = bnum
+                elif lc.endswith((" lower", "-lower", " down", "-down")) or _LOWER_RL_RE.search(raw):
+                    lower_btn = bnum
+                elif not has_led:
+                    # No LED = no scene indicator = raise/lower physical button
+                    no_led_buttons.append(bnum)
 
             btn_nums.append(bnum)
             eng = _strip_eng(raw, area_name, device_name)
             if eng:
                 btn_names[str(bnum)] = eng
 
-        # Assign raise/lower from no-LED buttons (Lutron: odd=raise, even=lower)
-        for n in sorted(no_led_buttons):
-            if n % 2 == 1 and raise_btn is None:
-                raise_btn = n
-            elif n % 2 == 0 and lower_btn is None:
-                lower_btn = n
-        # Sequential fallback when all no-LED buttons share the same parity
-        for n in sorted(no_led_buttons):
-            if raise_btn is None and n != lower_btn:
-                raise_btn = n
-            elif lower_btn is None and n != raise_btn:
-                lower_btn = n
+        if has_raise_lower:
+            # Assign raise/lower from no-LED buttons (Lutron: odd=raise, even=lower)
+            for n in sorted(no_led_buttons):
+                if n % 2 == 1 and raise_btn is None:
+                    raise_btn = n
+                elif n % 2 == 0 and lower_btn is None:
+                    lower_btn = n
+            # Sequential fallback when all no-LED buttons share the same parity
+            for n in sorted(no_led_buttons):
+                if raise_btn is None and n != lower_btn:
+                    raise_btn = n
+                elif lower_btn is None and n != raise_btn:
+                    lower_btn = n
 
         btn_nums   = sorted(set(btn_nums))
         configurable = [n for n in btn_nums if n not in (raise_btn, lower_btn)]
@@ -390,6 +401,7 @@ async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -
             "lower_button":         lower_btn,
             "button_names":         btn_names,
             "leap_button_map":      {},
+            CONF_KEYPAD_TYPE:       ktype,  # persist corrected type
         }
         _LOGGER.info(
             "Auto-detected layout for '%s' (serial=%s): %d buttons, "
@@ -928,7 +940,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _register_panel_once(hass)
 
     # Populate button layout for entries that were created before auto-detection worked.
+    # Try immediately; if the bridge isn't ready yet, retry after HA finishes starting.
     await _auto_refresh_button_layout(hass, entry)
+    if not entry.data.get("button_numbers"):
+        async def _deferred_refresh(_event: Event | None = None) -> None:
+            await _auto_refresh_button_layout(hass, entry)
+
+        if hass.state is CoreState.running:
+            hass.async_create_task(_deferred_refresh())
+        else:
+            entry.async_on_unload(
+                hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _deferred_refresh)
+            )
 
     buttons_cfg = _build_buttons_from_options(entry.options.get("buttons", {}))
 

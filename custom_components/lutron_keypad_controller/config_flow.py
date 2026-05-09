@@ -370,16 +370,20 @@ def _build_layout_from_inline_buttons(
 
 
 def _build_layout_from_bridge_buttons(
-    candidates: list[dict], area_name: str, device_name: str
+    candidates: list[dict], area_name: str, device_name: str,
+    has_raise_lower: bool = True,
 ) -> dict:
     """Build a layout dict from bridge.buttons entries (HomeWorks QSX / RA3).
 
     bridge.buttons entries carry a 'button_led' field:
       - button_led is not None → button has an LED entity → configurable scene button
-      - button_led is None     → button has no LED       → raise/lower physical button
+      - button_led is None     → button has no LED       → raise/lower candidate
 
-    Lutron always assigns raise to odd button numbers and lower to even within
-    any raise/lower pair (e.g. raise=17 lower=18, raise=19 lower=20).
+    Raise/lower detection via button_led is only applied when has_raise_lower=True.
+    Alisee and Pico keypads must pass has_raise_lower=False — Alisee has no
+    raise/lower rocker, and Pico has no LEDs on any button.
+
+    Lutron assigns odd button numbers to raise and even to lower within each pair.
     """
     button_numbers: list[int] = []
     raise_btn: int | None = None
@@ -400,32 +404,34 @@ def _build_layout_from_bridge_buttons(
         name_lc  = raw_name.lower()
         has_led  = btn.get("button_led") is not None
 
-        if (name_lc.endswith((" raise", "-raise", " up", "-up"))
-                or _RAISE_NAME_RE.search(raw_name)):
-            raise_btn = bnum
-        elif (name_lc.endswith((" lower", "-lower", " down", "-down"))
-                or _LOWER_NAME_RE.search(raw_name)):
-            lower_btn = bnum
-        elif not has_led:
-            no_led_buttons.append(bnum)
+        if has_raise_lower:
+            if (name_lc.endswith((" raise", "-raise", " up", "-up"))
+                    or _RAISE_NAME_RE.search(raw_name)):
+                raise_btn = bnum
+            elif (name_lc.endswith((" lower", "-lower", " down", "-down"))
+                    or _LOWER_NAME_RE.search(raw_name)):
+                lower_btn = bnum
+            elif not has_led:
+                no_led_buttons.append(bnum)
 
         button_numbers.append(bnum)
         engraving = _strip_engraving(raw_name, area_name, device_name)
         if engraving:
             button_names[str(bnum)] = engraving
 
-    # Assign raise/lower from no-LED buttons (Lutron convention: odd=raise, even=lower)
-    for n in sorted(no_led_buttons):
-        if n % 2 == 1 and raise_btn is None:
-            raise_btn = n
-        elif n % 2 == 0 and lower_btn is None:
-            lower_btn = n
-    # Sequential fallback when all no-LED buttons share the same parity
-    for n in sorted(no_led_buttons):
-        if raise_btn is None and n != lower_btn:
-            raise_btn = n
-        elif lower_btn is None and n != raise_btn:
-            lower_btn = n
+    if has_raise_lower:
+        # Assign raise/lower from no-LED buttons (Lutron convention: odd=raise, even=lower)
+        for n in sorted(no_led_buttons):
+            if n % 2 == 1 and raise_btn is None:
+                raise_btn = n
+            elif n % 2 == 0 and lower_btn is None:
+                lower_btn = n
+        # Sequential fallback when all no-LED buttons share the same parity
+        for n in sorted(no_led_buttons):
+            if raise_btn is None and n != lower_btn:
+                raise_btn = n
+            elif lower_btn is None and n != raise_btn:
+                lower_btn = n
 
     button_numbers = sorted(set(button_numbers))
     configurable   = [n for n in button_numbers if n not in (raise_btn, lower_btn)]
@@ -539,7 +545,11 @@ def _detect_button_layout(
                     "Strategy 3 (bridge.buttons): %d buttons for serial=%s device_id=%s",
                     len(btn_candidates), serial, found_device_id,
                 )
-                return _build_layout_from_bridge_buttons(btn_candidates, area_name, device_name)
+                from .const import KEYPAD_LAYOUTS, KEYPAD_GENERIC
+                _, has_rl = KEYPAD_LAYOUTS.get(keypad_type, KEYPAD_LAYOUTS[KEYPAD_GENERIC])
+                return _build_layout_from_bridge_buttons(
+                    btn_candidates, area_name, device_name, has_raise_lower=has_rl,
+                )
 
         # Device found but no button data at all — log for diagnosis
         _LOGGER.warning(

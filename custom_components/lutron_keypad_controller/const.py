@@ -145,10 +145,10 @@ KEYPAD_LAYOUTS: dict[str, tuple[int, bool]] = {
     KEYPAD_SEETOUCH_HYBRID: (5,  True),
     KEYPAD_SUNNATA:         (4,  True),
     KEYPAD_SUNNATA_HYBRID:  (3,  True),
-    KEYPAD_ALISEE:          (5,  True),
+    KEYPAD_ALISEE:          (5,  False),  # Alisee has no raise/lower rocker
     KEYPAD_PALLADIOM:       (5,  True),
     KEYPAD_TABLETOP:        (10, False),
-    KEYPAD_PICO:            (3,  False),
+    KEYPAD_PICO:            (3,  False),  # Pico has no LEDs and no raise/lower
     KEYPAD_GENERIC:         (6,  True),
 }
 
