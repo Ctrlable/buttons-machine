@@ -1825,7 +1825,8 @@ class LutronKeypadsController:
     # _HOLD_CONFIRM must exceed the user's natural quick-tap duration.
     # Observed tap release times on this hardware: ~440 ms → 600 ms gives margin.
 
-    _FAKE_WINDOW        = 0.025  # seconds — releases within this window are Lutron fakes
+    _FAKE_WINDOW        = 0.075  # seconds — releases within this window are Lutron fakes
+    # 75 ms covers bridge firmware that emits fake releases at ~10–60 ms after press.
     _HOLD_CONFIRM       = 0.60   # seconds after PRESS before hold event fires
     _DOUBLE_TAP_WINDOW  = 0.40   # seconds — second press within this window triggers double_tap
     _RAMP_STEP_PCT      = 10     # brightness % per ramp tick
@@ -1919,11 +1920,16 @@ class LutronKeypadsController:
             confirm.cancel()
         btn_cfg = self._buttons.get(btn_num)
         if btn_cfg is not None:
-            action          = btn_cfg.get(CONF_ACTION_TYPE)
-            was_hold_armed  = confirm is not None  # hold timer was live when released
-            # Dispatch tap for: normal hold-capable actions OR buttons that had the
-            # hold timer armed because they carry a custom hold block
-            if action in self._HOLD_ACTIONS or was_hold_armed:
+            was_hold_armed = confirm is not None  # hold timer was live when released
+            # TAP: dispatch only when the hold timer was still pending at release.
+            # Do NOT use "action in _HOLD_ACTIONS" as a fallback — that fires on the
+            # real release after a false tap (fake release cancelled the timer), causing
+            # a double dispatch that triggers the scene a second time instead of ramping.
+            if was_hold_armed:
+                _LOGGER.info(
+                    "'%s': button %d TAP (elapsed=%.3fs)",
+                    self.name, btn_num, elapsed,
+                )
                 self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
 
     @callback
@@ -1966,6 +1972,10 @@ class LutronKeypadsController:
             # Hold → ramp the button's own assigned lights continuously
             entities  = self._get_btn_light_entities(btn_cfg)
             direction = self._next_ramp_dir(btn_num, entities)
+            _LOGGER.info(
+                "'%s': button %d HOLD — cycle_dim ramp %s on %s",
+                self.name, btn_num, direction, entities,
+            )
         else:
             # entity_toggle / stateful_scene: only ramp when LED is currently ON
             if not self._is_btn_led_on(btn_num):
