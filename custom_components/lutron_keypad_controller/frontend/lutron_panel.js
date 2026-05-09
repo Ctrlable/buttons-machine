@@ -1750,13 +1750,7 @@ class LutronKeypadsPanel extends HTMLElement {
         type: "lutron_keypad_controller/add_keypad",
         serial: device.serial,
         name,
-        area_name:      device.area || "",
-        keypad_type:    device.type || "generic",
-        model_number:   device.model || "",
-        button_numbers: device.button_numbers || [],
-        raise_button:   device.raise_button ?? null,
-        lower_button:   device.lower_button ?? null,
-        button_names:   device.button_names || {},
+        device_id: device.device_id || "",
       });
       this._closeDialog();
       await this._loadEntries();
