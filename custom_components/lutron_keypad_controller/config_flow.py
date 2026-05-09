@@ -670,6 +670,7 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_AREA_NAME:     area_name,
                     CONF_KEYPAD_TYPE:   keypad_type,
                     "lutron_type":      device_type,
+                    "model_number":     device.get("model", ""),
                     "device_id":        device.get("device_id", ""),
                     **self._detected_layout,
                 },

@@ -303,8 +303,11 @@ async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -
     Runs at startup only when button_numbers is absent from entry.data.
     Uses bridge.buttons (HomeWorks QSX / RA3) — the authoritative per-button dict.
     """
-    if entry.data.get("button_numbers"):
-        return  # already detected
+    has_buttons = bool(entry.data.get("button_numbers"))
+    has_model   = "model_number" in entry.data
+
+    if has_buttons and has_model:
+        return  # fully populated
 
     serial    = str(entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
     device_id = str(entry.data.get("device_id", "")).strip()
@@ -320,6 +323,26 @@ async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -
     lutron_type = entry.data.get("lutron_type", "")
     ktype = _infer_keypad_type(lutron_type) if lutron_type else entry.data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC)
     _, has_raise_lower = KEYPAD_LAYOUTS.get(ktype, KEYPAD_LAYOUTS[KEYPAD_GENERIC])
+
+    if has_buttons:
+        # Only need to backfill model_number for existing entries
+        for bridge in _iter_lutron_bridges(hass):
+            try:
+                all_devs: dict = bridge.get_devices()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("get_devices() failed backfilling model for '%s': %s", entry.title, exc)
+                continue
+            for d in all_devs.values():
+                if (serial    and str(d.get("serial",    "")) == serial) \
+                or (device_id and str(d.get("device_id", "")) == device_id):
+                    model_number = d.get("model", "") or ""
+                    hass.config_entries.async_update_entry(
+                        entry, data={**entry.data, "model_number": model_number}
+                    )
+                    _LOGGER.debug("Backfilled model_number=%r for '%s'", model_number, entry.title)
+                    return
+        _LOGGER.debug("Could not backfill model_number for '%s' (serial=%s)", entry.title, serial)
+        return
 
     def _strip_eng(full_name: str, area: str, dev: str) -> str:
         name = full_name.strip()
@@ -394,6 +417,17 @@ async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -
         btn_nums   = sorted(set(btn_nums))
         configurable = [n for n in btn_nums if n not in (raise_btn, lower_btn)]
 
+        model_number = ""
+        try:
+            all_devs: dict = bridge.get_devices()
+            for d in all_devs.values():
+                if (serial    and str(d.get("serial",    "")) == serial) \
+                or (device_id and str(d.get("device_id", "")) == device_id):
+                    model_number = d.get("model", "") or ""
+                    break
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("get_devices() failed fetching model for '%s': %s", entry.title, exc)
+
         layout = {
             "button_numbers":       btn_nums,
             "configurable_buttons": configurable,
@@ -402,6 +436,7 @@ async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -
             "button_names":         btn_names,
             "leap_button_map":      {},
             CONF_KEYPAD_TYPE:       ktype,  # persist corrected type
+            "model_number":         model_number,
         }
         _LOGGER.info(
             "Auto-detected layout for '%s' (serial=%s): %d buttons, "

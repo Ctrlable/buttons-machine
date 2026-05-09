@@ -7,16 +7,43 @@ const DOMAIN = "lutron_keypad_controller";
 
 // ── Keypad layout geometry ────────────────────────────────────────
 const KEYPAD_LAYOUTS = {
-  seetouch:        { mainCount: 6, hasRL: true,  cols: 2 },
-  seetouch_hybrid: { mainCount: 5, hasRL: true,  cols: 2 },
+  seetouch:        { mainCount: 6, hasRL: true,  cols: 1 },
+  seetouch_hybrid: { mainCount: 5, hasRL: true,  cols: 1 },
   sunnata:         { mainCount: 4, hasRL: true,  cols: 1 },
   sunnata_hybrid:  { mainCount: 3, hasRL: true,  cols: 1 },
-  alisee:          { mainCount: 5, hasRL: true,  cols: 1 },
+  alisee:          { mainCount: 5, hasRL: false, cols: 1 },
   palladiom:       { mainCount: 5, hasRL: true,  cols: 1 },
   tabletop:        { mainCount: 10, hasRL: false, cols: 2 },
   pico:            { mainCount: 3,  hasRL: false, cols: 1 },
-  generic:         { mainCount: 6,  hasRL: true,  cols: 2 },
+  generic:         { mainCount: 6,  hasRL: true,  cols: 1 },
 };
+
+/**
+ * Parse the physical column layout from a keypad model number string.
+ * Returns an array of per-column button counts, e.g. [4] or [4, 4].
+ * Returns null when the model is unknown — caller falls back to KEYPAD_LAYOUTS.cols.
+ *
+ * Palladiom  "HQWT-S-PR4W"  → [4]      (one letter + digits + W)
+ *            "HQWT-S-P44W"  → [4, 4]
+ * Alisee     "2 Column (3B-3B)" → [3, 3]
+ * SeeTouch   "HQRD-W6BRL"   → [6]      (W + digits + B)
+ */
+function parsePhysicalColumns(model, keypadType) {
+  if (!model) return null;
+  if (keypadType === "alisee") {
+    const m = model.match(/\((\d+B(?:-\d+B)*)\)/);
+    if (m) return m[1].split("-").map(s => parseInt(s, 10));
+  }
+  if (keypadType === "palladiom") {
+    const m = model.match(/[A-Z](\d+)W/);
+    if (m) return m[1].split("").map(Number);
+  }
+  if (keypadType === "seetouch" || keypadType === "seetouch_hybrid") {
+    const m = model.match(/W(\d+)B/);
+    if (m) return [parseInt(m[1], 10)];
+  }
+  return null;
+}
 
 // ── Action types ──────────────────────────────────────────────────
 const ACTION_TYPES = {
@@ -176,7 +203,8 @@ const STYLES = `
     font-size: 8px; color: #555; letter-spacing: 1px; text-transform: uppercase;
     align-self: flex-start; padding-left: 2px; margin-bottom: 2px;
   }
-  .kp-main-buttons { display: grid; gap: 5px; width: 100%; }
+  .kp-main-buttons { display: flex; flex-direction: row; gap: 5px; width: 100%; }
+  .kp-col { display: flex; flex-direction: column; gap: 5px; flex: 1; }
   .kp-btn {
     background: #3a3a3a; border: 1px solid #2a2a2a; border-radius: 4px;
     cursor: pointer; transition: all 0.15s;
@@ -698,18 +726,41 @@ class LutronKeypadsPanel extends HTMLElement {
     const layout = getLayout(ktype);
     const pending = this._pendingConfig[this._selectedEntryId] || {};
     const names = entry.data?.button_names || {};
+    const modelNum = entry.data?.model_number || "";
 
     const mainButtons = buttons.filter(b => !b.is_raise && !b.is_lower);
     const raiseBtn = buttons.find(b => b.is_raise);
     const lowerBtn = buttons.find(b => b.is_lower);
-    const colsStyle = `grid-template-columns: repeat(${layout.cols}, 1fr)`;
 
-    const btnHtml = mainButtons.map(b => {
+    // Determine physical column distribution from model number, or fall back to layout.cols
+    let colCounts = parsePhysicalColumns(modelNum, ktype);
+    if (!colCounts) {
+      const numCols = layout.cols || 1;
+      const perCol = Math.ceil(mainButtons.length / numCols);
+      colCounts = [];
+      let rem = mainButtons.length;
+      for (let i = 0; i < numCols && rem > 0; i++) {
+        const c = Math.min(perCol, rem);
+        colCounts.push(c);
+        rem -= c;
+      }
+    }
+
+    const makeBtnDiv = b => {
       const cfg = pending[b.number] || {};
       const label = cfg.label || names[String(b.number)] || `Btn ${b.number}`;
-      const sel = b.number === this._selectedButton ? "selected" : "";
+      const sel  = b.number === this._selectedButton ? "selected" : "";
       const conf = cfg.action_type && cfg.action_type !== "none" ? "configured" : "";
       return `<div class="kp-btn ${sel} ${conf}" data-kp-btn="${b.number}" style="position:relative">${this._esc(label)}</div>`;
+    };
+
+    // Distribute main buttons across physical columns (top-to-bottom per column)
+    let btnIdx = 0;
+    const colsHtml = colCounts.map((count, ci) => {
+      const isLast = ci === colCounts.length - 1;
+      const slice = isLast ? mainButtons.slice(btnIdx) : mainButtons.slice(btnIdx, btnIdx + count);
+      btnIdx += count;
+      return `<div class="kp-col">${slice.map(makeBtnDiv).join("")}</div>`;
     }).join("");
 
     let rlHtml = "";
@@ -743,7 +794,7 @@ class LutronKeypadsPanel extends HTMLElement {
         </div>
         <div class="keypad-device">
           <div class="kp-logo">LUTRON</div>
-          <div class="kp-main-buttons" style="${colsStyle}">${btnHtml}</div>
+          <div class="kp-main-buttons">${colsHtml}</div>
           ${rlHtml}
         </div>
         <div class="engraving-section">
