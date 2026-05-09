@@ -122,6 +122,7 @@ from .const import (
     CONF_LED_MODE,
     CONF_TARGET_BRIGHTNESS,
     CONF_TARGET_COLOR_TEMP,
+    CONF_ENTITY_SETTINGS,
     LED_MODE_ROOM,
     LED_MODE_SCENE,
     CONF_DEVICE_SERIAL,
@@ -255,6 +256,8 @@ def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
             btn_cfg[CONF_TARGET_BRIGHTNESS] = int(btn_data[CONF_TARGET_BRIGHTNESS])
         if btn_data.get(CONF_TARGET_COLOR_TEMP):
             btn_cfg[CONF_TARGET_COLOR_TEMP] = int(btn_data[CONF_TARGET_COLOR_TEMP])
+        if btn_data.get(CONF_ENTITY_SETTINGS):
+            btn_cfg[CONF_ENTITY_SETTINGS] = btn_data[CONF_ENTITY_SETTINGS]
         result.append(btn_cfg)
     return result
 
@@ -1174,8 +1177,9 @@ class LutronKeypadsController:
         If no target brightness/CCT is configured, "on at any level" satisfies the check.
         """
         btn_cfg = self._buttons.get(btn_num, {})
-        target_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
-        target_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
+        global_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
+        global_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
+        entity_settings: dict = btn_cfg.get(CONF_ENTITY_SETTINGS, {})
 
         def _at_target(eid: str) -> bool:
             st = self.hass.states.get(eid)
@@ -1183,6 +1187,9 @@ class LutronKeypadsController:
                 return False
             if not eid.startswith("light."):
                 return True  # non-light: just being "on" satisfies scene
+            ent_cfg = entity_settings.get(eid, {})
+            target_bri = int(ent_cfg.get("brightness") or global_bri)
+            target_cct = int(ent_cfg.get("color_temp") or global_cct)
             if target_bri > 0:
                 current_pct = round((st.attributes.get("brightness", 0) or 0) / 255 * 100)
                 if abs(current_pct - target_bri) > 5:
@@ -1749,8 +1756,9 @@ class LutronKeypadsController:
 
         elif action == ACTION_ENTITY_TOGGLE:
             entity_ids = _normalize_targets(target)
-            target_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
-            target_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
+            global_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
+            global_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
+            entity_settings_map: dict = btn_cfg.get(CONF_ENTITY_SETTINGS, {})
             led_mode   = btn_cfg.get(CONF_LED_MODE, LED_MODE_ROOM)
 
             if led_mode == LED_MODE_SCENE:
@@ -1769,16 +1777,22 @@ class LutronKeypadsController:
                     self._last_action = {"type": ACTION_ENTITY_TOGGLE, "entities": entity_ids}
                     await self._write_led_entity(btn_num, False)
                 else:
-                    # Scene not active → activate: apply configured target settings.
+                    # Scene not active → activate: apply per-entity target settings.
                     # LED is NOT written here — entity tracking sets it ON once the
                     # light actually reaches the target level.
                     for eid in entity_ids:
                         if eid.startswith("light."):
+                            ent_cfg = entity_settings_map.get(eid, {})
+                            ent_bri = int(ent_cfg.get("brightness") or global_bri)
+                            ent_cct = int(ent_cfg.get("color_temp") or global_cct)
+                            ent_hs  = ent_cfg.get("hs_color")
                             svc_data: dict[str, Any] = {ATTR_ENTITY_ID: eid}
-                            if target_bri > 0:
-                                svc_data["brightness_pct"] = target_bri
-                            if target_cct > 0:
-                                svc_data["color_temp_kelvin"] = target_cct
+                            if ent_bri > 0:
+                                svc_data["brightness_pct"] = ent_bri
+                            if ent_cct > 0:
+                                svc_data["color_temp_kelvin"] = ent_cct
+                            if ent_hs:
+                                svc_data["hs_color"] = ent_hs
                             await self.hass.services.async_call(
                                 "light", SERVICE_TURN_ON, svc_data, blocking=True,
                             )
@@ -1800,15 +1814,27 @@ class LutronKeypadsController:
                     pre_on = pre_state is not None and pre_state.state not in (
                         "off", "closed", "unavailable", "unknown", "none"
                     )
-                if not pre_on and (target_bri > 0 or target_cct > 0):
-                    # Off + targets configured → turn on at target state
+                has_any_target = any(
+                    int(entity_settings_map.get(eid, {}).get("brightness") or global_bri) > 0
+                    or int(entity_settings_map.get(eid, {}).get("color_temp") or global_cct) > 0
+                    or bool(entity_settings_map.get(eid, {}).get("hs_color"))
+                    for eid in entity_ids if eid.startswith("light.")
+                ) if entity_ids else False
+                if not pre_on and has_any_target:
+                    # Off + targets configured → turn on at per-entity target state
                     for eid in entity_ids:
                         if eid.startswith("light."):
+                            ent_cfg = entity_settings_map.get(eid, {})
+                            ent_bri = int(ent_cfg.get("brightness") or global_bri)
+                            ent_cct = int(ent_cfg.get("color_temp") or global_cct)
+                            ent_hs  = ent_cfg.get("hs_color")
                             svc_data = {ATTR_ENTITY_ID: eid}
-                            if target_bri > 0:
-                                svc_data["brightness_pct"] = target_bri
-                            if target_cct > 0:
-                                svc_data["color_temp_kelvin"] = target_cct
+                            if ent_bri > 0:
+                                svc_data["brightness_pct"] = ent_bri
+                            if ent_cct > 0:
+                                svc_data["color_temp_kelvin"] = ent_cct
+                            if ent_hs:
+                                svc_data["hs_color"] = ent_hs
                             await self.hass.services.async_call(
                                 "light", SERVICE_TURN_ON, svc_data, blocking=True,
                             )

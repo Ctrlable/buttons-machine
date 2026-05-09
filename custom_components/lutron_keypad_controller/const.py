@@ -21,8 +21,9 @@ CONF_ACTION_PARAMS   = "action_params"
 CONF_LED_ENTITY        = "led_entity"
 CONF_LED_INVERT        = "led_invert"
 CONF_LED_MODE          = "led_mode"
-CONF_TARGET_BRIGHTNESS = "target_brightness"   # 1-100 %, 0 = not set
-CONF_TARGET_COLOR_TEMP = "target_color_temp"   # Kelvin, 0 = not set
+CONF_TARGET_BRIGHTNESS = "target_brightness"   # 1-100 %, 0 = not set (legacy global)
+CONF_TARGET_COLOR_TEMP = "target_color_temp"   # Kelvin, 0 = not set (legacy global)
+CONF_ENTITY_SETTINGS   = "entity_settings"     # per-entity overrides: {entity_id: {brightness, color_temp, hs_color}}
 
 # LED mode values (entity_toggle buttons)
 LED_MODE_ROOM  = "room"   # ON when ANY assigned entity is on

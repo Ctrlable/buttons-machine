@@ -41,9 +41,9 @@ const LED_LOGIC = {
 
 // ── Entity-domain display labels ──────────────────────────────────
 const DOMAIN_LABELS = {
-  scene: "Scenes", light: "Lighting", switch: "Switches",
-  cover: "Covers", automation: "Automations", script: "Scripts",
-  fan: "Fans", media_player: "Media Players", input_boolean: "Input Booleans",
+  scene: "Scene", light: "Light", switch: "Switch",
+  cover: "Cover", automation: "Auto", script: "Script",
+  fan: "Fan", media_player: "Media", input_boolean: "Boolean",
 };
 
 // ── CSS ───────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ const STYLES = `
     overflow: hidden;
   }
 
-  /* ── Top nav bar (Lutron Designer style) ── */
+  /* ── Top nav bar ── */
   .panel-header {
     display: flex;
     align-items: center;
@@ -72,139 +72,67 @@ const STYLES = `
     box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     z-index: 10;
   }
-  .panel-header .logo {
-    font-size: 18px;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-    color: #81c784;
-  }
-  .panel-header .subtitle {
-    font-size: 12px;
-    color: #a5d6a7;
-    flex: 1;
-    padding-left: 8px;
-  }
+  .panel-header .logo { font-size: 18px; font-weight: 500; letter-spacing: 0.5px; color: #81c784; }
+  .panel-header .subtitle { font-size: 12px; color: #a5d6a7; flex: 1; padding-left: 8px; }
   .btn-save {
-    background: #2e7d32;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s;
+    background: #2e7d32; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 20px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.2s;
   }
   .btn-save:hover { background: #388e3c; }
   .btn-save:disabled { background: #555; cursor: default; }
-  .save-status {
-    font-size: 12px;
-    color: #a5d6a7;
-    min-width: 120px;
-    text-align: right;
-  }
+  .save-status { font-size: 12px; color: #a5d6a7; min-width: 120px; text-align: right; }
 
   /* ── Body layout ── */
-  .panel-body {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-  }
+  .panel-body { display: flex; flex: 1; overflow: hidden; }
 
   /* ── Resize handles ── */
   .resize-handle-v {
-    width: 5px;
-    cursor: ew-resize;
+    width: 5px; cursor: ew-resize;
     background: var(--divider-color, #e0e0e0);
-    flex-shrink: 0;
-    transition: background 0.15s;
-    user-select: none;
+    flex-shrink: 0; transition: background 0.15s; user-select: none;
   }
   .resize-handle-v:hover, .resize-handle-v.dragging { background: #4caf50; }
-
   .resize-handle-h {
-    height: 5px;
-    cursor: ns-resize;
+    height: 5px; cursor: ns-resize;
     background: var(--divider-color, #e0e0e0);
-    flex-shrink: 0;
-    transition: background 0.15s;
-    user-select: none;
+    flex-shrink: 0; transition: background 0.15s; user-select: none;
   }
   .resize-handle-h:hover, .resize-handle-h.dragging { background: #4caf50; }
 
-  /* ── Left sidebar: keypad list ── */
+  /* ── Left sidebar ── */
   .sidebar {
-    width: 220px;
-    min-width: 140px;
-    background: #1e2a22;
-    color: #c8e6c9;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    flex-shrink: 0;
+    width: 220px; min-width: 140px;
+    background: #1e2a22; color: #c8e6c9;
+    display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
   }
   .sidebar-header {
-    padding: 12px 14px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: #81c784;
+    padding: 12px 14px 8px; font-size: 11px; font-weight: 600;
+    letter-spacing: 1px; text-transform: uppercase; color: #81c784;
     border-bottom: 1px solid #2d4a35;
   }
-  .sidebar-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 4px 0;
-  }
+  .sidebar-list { flex: 1; overflow-y: auto; padding: 4px 0; }
   .sidebar-area {
-    padding: 6px 14px 2px;
-    font-size: 10px;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: #4caf50;
-    font-weight: 600;
-    margin-top: 4px;
+    padding: 6px 14px 2px; font-size: 10px; letter-spacing: 0.8px;
+    text-transform: uppercase; color: #4caf50; font-weight: 600; margin-top: 4px;
   }
   .sidebar-entry {
-    display: flex;
-    flex-direction: column;
-    padding: 8px 14px 8px 20px;
-    cursor: pointer;
-    border-left: 3px solid transparent;
-    transition: background 0.15s;
-    gap: 2px;
+    display: flex; flex-direction: column; padding: 8px 14px 8px 20px;
+    cursor: pointer; border-left: 3px solid transparent; transition: background 0.15s; gap: 2px;
   }
   .sidebar-entry:hover { background: rgba(255,255,255,0.06); }
-  .sidebar-entry.active {
-    background: rgba(76,175,80,0.18);
-    border-left-color: #4caf50;
-  }
+  .sidebar-entry.active { background: rgba(76,175,80,0.18); border-left-color: #4caf50; }
   .sidebar-entry .entry-name { font-size: 13px; color: #e8f5e9; font-weight: 500; }
   .sidebar-entry .entry-type {
-    font-size: 10px; color: #81c784;
-    background: rgba(76,175,80,0.2);
-    border-radius: 3px;
-    padding: 1px 5px;
-    display: inline-block;
-    width: fit-content;
+    font-size: 10px; color: #81c784; background: rgba(76,175,80,0.2);
+    border-radius: 3px; padding: 1px 5px; display: inline-block; width: fit-content;
   }
 
-  /* ── Main programming area ── */
-  .main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+  /* ── Main area ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
   .welcome {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: var(--secondary-text-color, #757575);
-    gap: 12px;
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--secondary-text-color, #757575); gap: 12px;
   }
   .welcome .welcome-icon { font-size: 64px; opacity: 0.3; }
   .welcome h2 { font-size: 22px; font-weight: 300; margin: 0; }
@@ -212,302 +140,140 @@ const STYLES = `
 
   /* ── Breadcrumb ── */
   .breadcrumb {
-    background: rgba(76,175,80,0.07);
-    border-bottom: 1px solid rgba(76,175,80,0.2);
-    padding: 6px 16px;
-    font-size: 12px;
-    color: #4caf50;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 4px;
+    background: rgba(76,175,80,0.07); border-bottom: 1px solid rgba(76,175,80,0.2);
+    padding: 6px 16px; font-size: 12px; color: #4caf50;
+    flex-shrink: 0; display: flex; align-items: center; gap: 4px;
   }
   .breadcrumb span { color: #66bb6a; }
 
   /* ── Programming layout ── */
-  .prog-body {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-    gap: 0;
-  }
+  .prog-body { display: flex; flex: 1; overflow: hidden; }
 
-  /* ── Left column: keypad visual ── */
+  /* ── Keypad column ── */
   .col-keypad {
-    width: 186px;
-    min-width: 120px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 12px;
-    background: var(--card-background-color, #fff);
-    overflow-y: auto;
-    gap: 10px;
+    width: 186px; min-width: 120px; flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 12px; background: var(--card-background-color, #fff); overflow-y: auto; gap: 10px;
   }
-  .kp-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--secondary-text-color, #757575);
-  }
+  .kp-nav { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--secondary-text-color, #757575); }
   .kp-nav button {
-    background: none;
-    border: 1px solid var(--divider-color, #ccc);
-    border-radius: 4px;
-    padding: 2px 8px;
-    cursor: pointer;
-    font-size: 14px;
-    color: var(--primary-text-color, #212121);
-    transition: background 0.15s;
+    background: none; border: 1px solid var(--divider-color, #ccc);
+    border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 14px;
+    color: var(--primary-text-color, #212121); transition: background 0.15s;
   }
   .kp-nav button:hover { background: rgba(76,175,80,0.1); border-color: #a5d6a7; }
   .kp-nav button:disabled { opacity: 0.3; cursor: default; }
-  .kp-nav .btn-num {
-    font-weight: 600;
-    min-width: 48px;
-    text-align: center;
-    color: var(--primary-text-color);
-  }
+  .kp-nav .btn-num { font-weight: 600; min-width: 48px; text-align: center; color: var(--primary-text-color); }
 
-  /* ── Keypad visual (device drawing) ── */
+  /* ── Keypad device drawing ── */
   .keypad-device {
-    background: #242424;
-    border-radius: 10px;
-    padding: 10px 8px;
+    background: #242424; border-radius: 10px; padding: 10px 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    width: 140px;
-    position: relative;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px; width: 140px; position: relative;
   }
   .keypad-device .kp-logo {
-    font-size: 8px;
-    color: #555;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    align-self: flex-start;
-    padding-left: 2px;
-    margin-bottom: 2px;
+    font-size: 8px; color: #555; letter-spacing: 1px; text-transform: uppercase;
+    align-self: flex-start; padding-left: 2px; margin-bottom: 2px;
   }
-  .kp-main-buttons {
-    display: grid;
-    gap: 5px;
-    width: 100%;
-  }
+  .kp-main-buttons { display: grid; gap: 5px; width: 100%; }
   .kp-btn {
-    background: #3a3a3a;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 6px 4px;
-    min-height: 32px;
-    font-size: 9px;
-    color: #bdbdbd;
-    line-height: 1.2;
+    background: #3a3a3a; border: 1px solid #2a2a2a; border-radius: 4px;
+    cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 6px 4px; min-height: 32px;
+    font-size: 9px; color: #bdbdbd; line-height: 1.2;
     box-shadow: inset 0 -2px 0 rgba(0,0,0,0.3), 0 1px 0 rgba(255,255,255,0.04);
-    word-break: break-word;
-    overflow: hidden;
+    word-break: break-word; overflow: hidden;
   }
   .kp-btn:hover { background: #4a4a4a; color: #e0e0e0; }
   .kp-btn.selected {
-    background: #2e7d32;
-    color: #fff;
-    border-color: #1b5e20;
+    background: #2e7d32; color: #fff; border-color: #1b5e20;
     box-shadow: inset 0 -2px 0 rgba(0,0,0,0.3), 0 0 0 2px rgba(76,175,80,0.4);
   }
   .kp-btn.configured::after {
-    content: "•";
-    color: #81c784;
-    position: absolute;
-    top: 2px;
-    right: 3px;
-    font-size: 8px;
+    content: "•"; color: #81c784;
+    position: absolute; top: 2px; right: 3px; font-size: 8px;
   }
   .kp-btn.raise-lower {
-    background: #2a2a2a;
-    font-size: 12px;
-    color: #666;
-    min-height: 22px;
-    padding: 2px;
+    background: #2a2a2a; font-size: 12px; color: #666; min-height: 22px; padding: 2px;
   }
   .kp-btn.raise-lower:hover { color: #aaa; background: #333; }
   .kp-btn.raise-lower.selected { background: #1b5e20; color: #81c784; }
-  .kp-rl-row {
-    display: flex;
-    gap: 4px;
-    width: 100%;
-    margin-top: 2px;
-  }
+  .kp-rl-row { display: flex; gap: 4px; width: 100%; margin-top: 2px; }
   .kp-rl-row .kp-btn { flex: 1; }
 
-  /* ── Button engraving fields ── */
-  .engraving-section {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
+  /* ── Engraving ── */
+  .engraving-section { width: 100%; display: flex; flex-direction: column; gap: 4px; }
   .engraving-section label {
-    font-size: 10px;
-    color: var(--secondary-text-color, #757575);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font-size: 10px; color: var(--secondary-text-color, #757575);
+    font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;
   }
   .engraving-section input {
-    width: 100%;
-    padding: 5px 7px;
-    border: 1px solid var(--divider-color, #ccc);
-    border-radius: 4px;
-    font-size: 12px;
-    background: var(--card-background-color, #fff);
-    color: var(--primary-text-color);
+    width: 100%; padding: 5px 7px; border: 1px solid var(--divider-color, #ccc);
+    border-radius: 4px; font-size: 12px;
+    background: var(--card-background-color, #fff); color: var(--primary-text-color);
     box-sizing: border-box;
   }
-  .engraving-section input:focus {
-    outline: none;
-    border-color: #4caf50;
-    box-shadow: 0 0 0 2px rgba(76,175,80,0.15);
-  }
+  .engraving-section input:focus { outline: none; border-color: #4caf50; box-shadow: 0 0 0 2px rgba(76,175,80,0.15); }
 
-  /* ── Right column: config + tree ── */
-  .col-right {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+  /* ── Right column ── */
+  .col-right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-  /* ── Button configuration strip ── */
+  /* ── Config strip ── */
   .btn-config-strip {
-    background: var(--card-background-color, #fff);
-    border-bottom: 1px solid var(--divider-color, #e0e0e0);
-    padding: 10px 16px;
-    flex-shrink: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 16px;
+    background: var(--card-background-color, #fff); border-bottom: 1px solid var(--divider-color, #e0e0e0);
+    padding: 10px 16px; flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
   }
-  .config-field {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
+  .config-field { display: flex; flex-direction: column; gap: 3px; }
   .config-field label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--secondary-text-color, #757575);
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--secondary-text-color, #757575);
   }
-  .config-field select, .config-field input[type="number"] {
-    border: 1px solid var(--divider-color, #ccc);
-    border-radius: 4px;
-    padding: 5px 8px;
-    font-size: 13px;
-    background: var(--card-background-color, #fff);
-    color: var(--primary-text-color);
-    cursor: pointer;
-    min-width: 120px;
+  .config-field select, .config-field input[type="text"], .config-field input[type="number"] {
+    border: 1px solid var(--divider-color, #ccc); border-radius: 4px; padding: 5px 8px;
+    font-size: 13px; background: var(--card-background-color, #fff);
+    color: var(--primary-text-color); cursor: pointer; min-width: 120px;
   }
   .config-field select:focus, .config-field input:focus {
-    outline: none;
-    border-color: #4caf50;
-    box-shadow: 0 0 0 2px rgba(76,175,80,0.15);
+    outline: none; border-color: #4caf50; box-shadow: 0 0 0 2px rgba(76,175,80,0.15);
   }
   .checkbox-field {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding-top: 14px;
-    font-size: 13px;
-    cursor: pointer;
+    display: flex; align-items: center; gap: 6px; padding-top: 14px; font-size: 13px; cursor: pointer;
   }
   .checkbox-field input[type="checkbox"] { accent-color: #2e7d32; width: 15px; height: 15px; }
 
-  /* ── Extra config fields (brightness, cct, scene group) ── */
+  /* ── Extra config (stateful_scene fields) ── */
   .extra-config {
     background: var(--secondary-background-color, #f5f5f5);
     border-bottom: 1px solid var(--divider-color, #e0e0e0);
-    padding: 8px 16px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    align-items: center;
-    flex-shrink: 0;
+    padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 14px;
+    align-items: center; flex-shrink: 0;
   }
   .extra-config.hidden { display: none; }
 
   /* ── Entity tree ── */
-  .tree-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--secondary-background-color, #f5f5f5);
-  }
+  .tree-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--secondary-background-color, #f5f5f5); }
   .tree-filter-bar {
-    background: var(--card-background-color, #fff);
-    border-bottom: 1px solid var(--divider-color, #e0e0e0);
-    padding: 8px 16px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-    font-size: 12px;
+    background: var(--card-background-color, #fff); border-bottom: 1px solid var(--divider-color, #e0e0e0);
+    padding: 8px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex-shrink: 0; font-size: 12px;
   }
   .tree-filter-bar label { color: var(--secondary-text-color, #757575); font-weight: 500; }
   .tree-filter-bar select {
-    border: 1px solid var(--divider-color, #ccc);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
-    background: var(--card-background-color, #fff);
-    color: var(--primary-text-color);
-    cursor: pointer;
+    border: 1px solid var(--divider-color, #ccc); border-radius: 4px; padding: 4px 8px;
+    font-size: 12px; background: var(--card-background-color, #fff); color: var(--primary-text-color); cursor: pointer;
   }
   .tree-filter-bar select:focus { outline: none; border-color: #4caf50; }
   .tree-filter-bar .expand-all {
-    margin-left: auto;
-    background: none;
-    border: none;
-    color: #4caf50;
-    cursor: pointer;
-    font-size: 12px;
-    text-decoration: underline;
+    margin-left: auto; background: none; border: none; color: #4caf50;
+    cursor: pointer; font-size: 12px; text-decoration: underline;
   }
-  .tree-container {
-    flex: 1;
-    overflow-y: auto;
-    padding: 4px 0;
-  }
-  .tree-empty {
-    padding: 32px 16px;
-    text-align: center;
-    color: var(--secondary-text-color, #757575);
-    font-size: 13px;
-  }
+  .tree-container { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .tree-empty { padding: 32px 16px; text-align: center; color: var(--secondary-text-color, #757575); font-size: 13px; }
   .area-node { border-bottom: 1px solid var(--divider-color, #ebebeb); }
   .area-header {
-    display: flex;
-    align-items: center;
-    padding: 7px 16px;
-    cursor: pointer;
-    background: var(--card-background-color, #fff);
-    user-select: none;
-    transition: background 0.12s;
-    gap: 8px;
+    display: flex; align-items: center; padding: 7px 16px; cursor: pointer;
+    background: var(--card-background-color, #fff); user-select: none; transition: background 0.12s; gap: 8px;
   }
   .area-header:hover { background: rgba(76,175,80,0.06); }
   .area-expand { font-size: 10px; color: var(--secondary-text-color, #aaa); width: 14px; }
@@ -517,113 +283,117 @@ const STYLES = `
   .area-entities { display: none; background: var(--secondary-background-color, #fafafa); }
   .area-entities.open { display: block; }
   .entity-row {
-    display: flex;
-    align-items: center;
-    padding: 5px 16px 5px 38px;
-    gap: 8px;
-    cursor: pointer;
-    transition: background 0.1s;
-    border-top: 1px solid var(--divider-color, #f0f0f0);
+    display: flex; align-items: center; padding: 5px 16px 5px 38px; gap: 8px;
+    cursor: pointer; transition: background 0.1s; border-top: 1px solid var(--divider-color, #f0f0f0);
   }
   .entity-row:hover { background: rgba(76,175,80,0.06); }
   .entity-row.selected { background: rgba(76,175,80,0.12); }
   .entity-check { accent-color: #2e7d32; width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
   .entity-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
   .entity-name { flex: 1; font-size: 13px; }
-  .entity-state {
-    font-size: 11px;
-    color: var(--secondary-text-color, #757575);
-    text-align: right;
-    min-width: 50px;
-  }
+  .entity-state { font-size: 11px; color: var(--secondary-text-color, #757575); text-align: right; min-width: 50px; }
   .entity-state.on { color: #4caf50; font-weight: 500; }
 
-  /* ── Programming summary table (bottom) ── */
+  /* ── Programming summary (bottom) ── */
   .summary-section {
     background: var(--card-background-color, #fff);
-    flex-shrink: 0;
-    min-height: 60px;
-    overflow-y: auto;
+    flex-shrink: 0; min-height: 60px; overflow-y: auto;
   }
   .summary-header {
-    padding: 6px 16px;
-    background: var(--secondary-background-color, #f5f5f5);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    color: var(--secondary-text-color, #757575);
-    border-bottom: 1px solid var(--divider-color, #e0e0e0);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 1;
+    padding: 6px 16px; background: var(--secondary-background-color, #f5f5f5);
+    font-size: 11px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase;
+    color: var(--secondary-text-color, #757575); border-bottom: 1px solid var(--divider-color, #e0e0e0);
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 1;
   }
-  .summary-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
+  .summary-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .summary-table th {
-    text-align: left;
-    padding: 5px 12px;
+    text-align: left; padding: 5px 10px;
     background: var(--secondary-background-color, #f5f5f5);
     border-bottom: 1px solid var(--divider-color, #e0e0e0);
-    font-weight: 500;
-    color: var(--secondary-text-color, #757575);
-    font-size: 11px;
-    position: sticky;
-    top: 37px;
+    font-weight: 600; color: var(--secondary-text-color, #757575);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    position: sticky; top: 37px; white-space: nowrap;
   }
-  .summary-table td {
-    padding: 5px 12px;
-    border-bottom: 1px solid var(--divider-color, #f0f0f0);
-  }
+  .summary-table td { padding: 5px 10px; border-bottom: 1px solid var(--divider-color, #f0f0f0); vertical-align: middle; }
   .summary-table tr:hover td { background: rgba(76,175,80,0.06); }
-  .summary-empty {
-    padding: 12px 16px;
-    font-size: 12px;
-    color: var(--secondary-text-color, #bbb);
-    font-style: italic;
-  }
+  .summary-empty { padding: 12px 16px; font-size: 12px; color: var(--secondary-text-color, #bbb); font-style: italic; }
   .type-badge {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 3px;
-    font-size: 10px;
-    background: rgba(76,175,80,0.15);
-    color: #4caf50;
-    font-weight: 500;
+    display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px;
+    background: rgba(76,175,80,0.15); color: #4caf50; font-weight: 600; white-space: nowrap;
   }
-  .remove-entity {
-    background: none;
-    border: none;
-    color: #ef5350;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 0 4px;
-    opacity: 0.6;
-  }
+  .remove-entity { background: none; border: none; color: #ef5350; cursor: pointer; font-size: 14px; padding: 0 4px; opacity: 0.6; }
   .remove-entity:hover { opacity: 1; }
+
+  /* ── Per-entity setting inputs in summary table ── */
+  .ent-setting {
+    width: 64px; padding: 3px 5px;
+    border: 1px solid var(--divider-color, #ccc); border-radius: 3px;
+    font-size: 11px; background: var(--card-background-color, #fff);
+    color: var(--primary-text-color); text-align: right;
+  }
+  .ent-setting:focus { outline: none; border-color: #4caf50; }
+  .ent-setting:placeholder-shown { color: var(--secondary-text-color, #aaa); }
+  .ent-color-input {
+    width: 34px; height: 22px; padding: 1px; border: 1px solid var(--divider-color, #ccc);
+    border-radius: 3px; cursor: pointer; background: none;
+  }
+  .no-cap { color: var(--secondary-text-color, #aaa); font-size: 12px; }
+  .cap-hint { font-size: 10px; color: var(--secondary-text-color, #aaa); font-style: italic; }
+  .state-on { color: #4caf50; font-weight: 500; }
 `;
 
 // ── Helpers ───────────────────────────────────────────────────────
+
+function getLightCaps(hass, entityId) {
+  if (!entityId.startsWith("light.")) return null;
+  const st = hass.states?.[entityId];
+  if (!st) return { brightness: true, colorTemp: false, color: false };
+  const modes = st.attributes?.supported_color_modes || [];
+  const feats = st.attributes?.supported_features || 0;
+  return {
+    brightness: modes.some(m => m !== "onoff") || !!(feats & 1),
+    colorTemp:  modes.includes("color_temp") || !!(feats & 2),
+    color:      modes.some(m => ["hs","rgb","xy","rgbw","rgbww"].includes(m)) || !!(feats & 16),
+  };
+}
+
+function hsToHex(h, s) {
+  const sv = s / 100;
+  const hi = Math.floor(h / 60) % 6;
+  const f  = h / 60 - Math.floor(h / 60);
+  const p  = 1 - sv;
+  const q  = 1 - f * sv;
+  const t  = 1 - (1 - f) * sv;
+  const [r, g, b] = [[1,t,p],[q,1,p],[p,1,t],[p,q,1],[t,p,1],[1,p,q]][hi];
+  const hex = v => Math.round(v * 255).toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+function hexToHs(hex) {
+  const r = parseInt(hex.slice(1,3), 16) / 255;
+  const g = parseInt(hex.slice(3,5), 16) / 255;
+  const b = parseInt(hex.slice(5,7), 16) / 255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max - min;
+  const s = max === 0 ? 0 : d / max;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = h * 60;
+    if (h < 0) h += 360;
+  }
+  return [Math.round(h), Math.round(s * 100)];
+}
 
 function entityIcon(entityId, state) {
   const domain = entityId.split(".")[0];
   const isOn = state && !["off","closed","unavailable","unknown"].includes(state);
   const icons = {
-    light: isOn ? "💡" : "🔦",
-    switch: isOn ? "🔵" : "⚪",
-    scene: "🎬",
-    automation: "⚙️",
-    script: "📜",
-    cover: state === "open" ? "🪟" : "🔲",
-    fan: isOn ? "🌀" : "💨",
-    media_player: "📺",
-    input_boolean: isOn ? "✅" : "⭕",
+    light: isOn ? "💡" : "🔦", switch: isOn ? "🔵" : "⚪", scene: "🎬",
+    automation: "⚙️", script: "📜", cover: state === "open" ? "🪟" : "🔲",
+    fan: isOn ? "🌀" : "💨", media_player: "📺", input_boolean: isOn ? "✅" : "⭕",
   };
   return icons[domain] || "▪️";
 }
@@ -669,16 +439,11 @@ function getLayout(keypadType) {
 }
 
 function getButtonsFromEntry(entryData) {
-  // Build button list from entry data (mirrors Python get_button_layout)
   const btnNums = entryData.button_numbers;
   if (btnNums && btnNums.length > 0) {
     const raise = entryData.raise_button;
     const lower = entryData.lower_button;
-    return btnNums.map(n => ({
-      number: n,
-      is_raise: n === raise,
-      is_lower: n === lower,
-    }));
+    return btnNums.map(n => ({ number: n, is_raise: n === raise, is_lower: n === lower }));
   }
   const kt = entryData.keypad_type || "generic";
   const layout = getLayout(kt);
@@ -695,17 +460,11 @@ function getButtonsFromEntry(entryData) {
 
 function defaultBtnCfg() {
   return {
-    label: "",
-    action_type: "none",
-    action_target: "",
-    led_entity: "",
-    led_invert: false,
-    led_mode: "room",
-    target_brightness: 0,
-    target_color_temp: 0,
-    scene_group: "",
-    cycle_dim: false,
-    enabled: true,
+    label: "", action_type: "none", action_target: "",
+    led_entity: "", led_invert: false, led_mode: "room",
+    target_brightness: 0, target_color_temp: 0,
+    scene_group: "", cycle_dim: false, enabled: true,
+    entity_settings: {},  // entityId → { brightness, color_temp, hs_color }
   };
 }
 
@@ -719,38 +478,29 @@ class LutronKeypadsPanel extends HTMLElement {
     this._entries = [];
     this._selectedEntryId = null;
     this._selectedButton = 1;
-    this._pendingConfig = {};   // entryId → { btnNum: cfg }
-    this._dirty = {};           // entryId → bool
+    this._pendingConfig = {};
+    this._dirty = {};
     this._expandedAreas = new Set();
     this._filterArea = "";
     this._initialized = false;
-    this._saveStatus = "";
     this._shadow = this.attachShadow({ mode: "open" });
 
     // Resizable panel sizes (px)
     this._sidebarWidth = 220;
     this._keypayWidth = 186;
-    this._summaryHeight = 180;
+    this._summaryHeight = 220;
     this._sidebarResizerBound = false;
   }
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._initialized) {
-      this._initialized = true;
-      this._setup();
-    }
+    if (!this._initialized) { this._initialized = true; this._setup(); }
   }
 
-  set panel(panel) {
-    this._panel = panel;
-  }
+  set panel(panel) { this._panel = panel; }
 
   connectedCallback() {
-    if (this._hass && !this._initialized) {
-      this._initialized = true;
-      this._setup();
-    }
+    if (this._hass && !this._initialized) { this._initialized = true; this._setup(); }
   }
 
   async _setup() {
@@ -758,7 +508,6 @@ class LutronKeypadsPanel extends HTMLElement {
     this._buildSkeleton();
     await this._loadEntries();
 
-    // Pre-select entry from URL query param
     const params = new URLSearchParams(window.location.search);
     const paramEntry = params.get("entry");
     if (paramEntry && this._entries.find(e => e.entry_id === paramEntry)) {
@@ -806,16 +555,13 @@ class LutronKeypadsPanel extends HTMLElement {
 
     this._shadow.appendChild(header);
     this._shadow.appendChild(root);
-
     this._shadow.getElementById("btn-save").addEventListener("click", () => this._saveConfig());
     this._initResizers();
   }
 
   async _loadEntries() {
     try {
-      this._entries = await this._hass.callWS({
-        type: "lutron_keypad_controller/get_entries",
-      });
+      this._entries = await this._hass.callWS({ type: "lutron_keypad_controller/get_entries" });
     } catch (e) {
       console.error("LutronPanel: failed to load entries", e);
       this._entries = [];
@@ -833,7 +579,6 @@ class LutronKeypadsPanel extends HTMLElement {
       return;
     }
 
-    // Group entries by area
     const byArea = {};
     for (const entry of this._entries) {
       const area = entry.data?.area_name || "";
@@ -870,9 +615,7 @@ class LutronKeypadsPanel extends HTMLElement {
     const entry = this._getEntry(entryId);
     if (!entry) return;
 
-    if (!this._pendingConfig[entryId]) {
-      this._loadPendingFromEntry(entryId, entry);
-    }
+    if (!this._pendingConfig[entryId]) this._loadPendingFromEntry(entryId, entry);
 
     const buttons = getButtonsFromEntry(entry.data);
     const firstConfigurable = buttons.find(b => !b.is_raise && !b.is_lower);
@@ -894,15 +637,16 @@ class LutronKeypadsPanel extends HTMLElement {
       pending[btn.number] = {
         ...defaultBtnCfg(),
         ...saved,
+        entity_settings: saved.entity_settings || {},
         label: saved.label || names[String(btn.number)] || "",
       };
-      if (btn.is_raise)  { pending[btn.number].action_type = "raise";  pending[btn.number].label = pending[btn.number].label || "Raise"; }
-      if (btn.is_lower)  { pending[btn.number].action_type = "lower";  pending[btn.number].label = pending[btn.number].label || "Lower"; }
+      if (btn.is_raise) { pending[btn.number].action_type = "raise";  pending[btn.number].label = pending[btn.number].label || "Raise"; }
+      if (btn.is_lower) { pending[btn.number].action_type = "lower";  pending[btn.number].label = pending[btn.number].label || "Lower"; }
     }
     this._pendingConfig[entryId] = pending;
   }
 
-  // ── Main programming area ──────────────────────────────────────
+  // ── Main area ──────────────────────────────────────────────────
 
   _renderMain() {
     const main = this._shadow.getElementById("main-content");
@@ -941,13 +685,13 @@ class LutronKeypadsPanel extends HTMLElement {
         </div>
       </div>
       <div class="resize-handle-h" id="summary-resizer"></div>
-      ${this._renderSummarySection(entry, btnCfg)}
+      ${this._renderSummarySection(entry, btnCfg, isRL)}
     `;
 
     this._attachMainListeners(entry, buttons, btnCfg);
   }
 
-  // ── Keypad visual column ───────────────────────────────────────
+  // ── Keypad visual ──────────────────────────────────────────────
 
   _renderKeypadColumn(entry, buttons, btnCfg) {
     const ktype = entry.data?.keypad_type || "generic";
@@ -958,10 +702,9 @@ class LutronKeypadsPanel extends HTMLElement {
     const mainButtons = buttons.filter(b => !b.is_raise && !b.is_lower);
     const raiseBtn = buttons.find(b => b.is_raise);
     const lowerBtn = buttons.find(b => b.is_lower);
-
     const colsStyle = `grid-template-columns: repeat(${layout.cols}, 1fr)`;
 
-    let btnHtml = mainButtons.map(b => {
+    const btnHtml = mainButtons.map(b => {
       const cfg = pending[b.number] || {};
       const label = cfg.label || names[String(b.number)] || `Btn ${b.number}`;
       const sel = b.number === this._selectedButton ? "selected" : "";
@@ -983,14 +726,12 @@ class LutronKeypadsPanel extends HTMLElement {
       rlHtml += `</div>`;
     }
 
-    // Prev/Next navigation
     const allNums = buttons.map(b => b.number);
     const curIdx = allNums.indexOf(this._selectedButton);
     const prevDisabled = curIdx <= 0 ? "disabled" : "";
     const nextDisabled = curIdx >= allNums.length - 1 ? "disabled" : "";
     const prevNum = curIdx > 0 ? allNums[curIdx - 1] : null;
     const nextNum = curIdx < allNums.length - 1 ? allNums[curIdx + 1] : null;
-
     const label1 = (this._pendingConfig[this._selectedEntryId] || {})[this._selectedButton]?.label || "";
 
     return `
@@ -1002,15 +743,12 @@ class LutronKeypadsPanel extends HTMLElement {
         </div>
         <div class="keypad-device">
           <div class="kp-logo">LUTRON</div>
-          <div class="kp-main-buttons" style="${colsStyle}">
-            ${btnHtml}
-          </div>
+          <div class="kp-main-buttons" style="${colsStyle}">${btnHtml}</div>
           ${rlHtml}
         </div>
         <div class="engraving-section">
           <label>Button Label (Engraving)</label>
-          <input id="inp-label" type="text" placeholder="Line 1" maxlength="20"
-                 value="${this._esc(label1)}">
+          <input id="inp-label" type="text" placeholder="Line 1" maxlength="20" value="${this._esc(label1)}">
         </div>
       </div>`;
   }
@@ -1025,23 +763,19 @@ class LutronKeypadsPanel extends HTMLElement {
     const atOptions = Object.entries(ACTION_TYPES).map(([val, info]) =>
       `<option value="${val}" ${val === at ? "selected" : ""}>${info.label}</option>`
     ).join("");
-
     const ledOptions = Object.entries(LED_LOGIC).map(([val, label]) =>
       `<option value="${val}" ${val === ledMode ? "selected" : ""}>${label}</option>`
     ).join("");
-
-    const ledDisabled = isRL ? "disabled" : "";
-    const atDisabled = isRL ? "disabled" : "";
 
     return `
       <div class="btn-config-strip">
         <div class="config-field">
           <label>Action Type</label>
-          <select id="sel-action-type" ${atDisabled}>${atOptions}</select>
+          <select id="sel-action-type" ${isRL ? "disabled" : ""}>${atOptions}</select>
         </div>
         <div class="config-field">
           <label>LED Logic</label>
-          <select id="sel-led-logic" ${ledDisabled}>${ledOptions}</select>
+          <select id="sel-led-logic" ${isRL ? "disabled" : ""}>${ledOptions}</select>
         </div>
         <label class="checkbox-field">
           <input id="chk-cycle-dim" type="checkbox" ${cycleDim} ${isRL ? "disabled" : ""}>
@@ -1054,30 +788,16 @@ class LutronKeypadsPanel extends HTMLElement {
       </div>`;
   }
 
-  // ── Extra config (brightness, CCT, scene group) ────────────────
+  // ── Extra config (stateful_scene: scene group + LED override) ──
 
   _renderExtraConfig(btnCfg, isRL) {
     const at = btnCfg.action_type || "none";
-    const showBri = !isRL && at === "entity_toggle";
     const showSg  = !isRL && at === "stateful_scene";
     const showLed = !isRL && at === "stateful_scene";
 
-    if (isRL || (!showBri && !showSg && !showLed)) {
-      return `<div class="extra-config hidden"></div>`;
-    }
+    if (isRL || (!showSg && !showLed)) return `<div class="extra-config hidden"></div>`;
 
     let inner = "";
-    if (showBri) {
-      inner += `
-        <div class="config-field">
-          <label>Target Brightness %</label>
-          <input id="inp-brightness" type="number" min="0" max="100" value="${btnCfg.target_brightness || 0}" style="min-width:80px">
-        </div>
-        <div class="config-field">
-          <label>Target Color Temp K</label>
-          <input id="inp-cct" type="number" min="0" max="10000" step="100" value="${btnCfg.target_color_temp || 0}" style="min-width:90px">
-        </div>`;
-    }
     if (showSg) {
       inner += `
         <div class="config-field">
@@ -1092,7 +812,6 @@ class LutronKeypadsPanel extends HTMLElement {
           <input id="inp-led-entity" type="text" value="${this._esc(btnCfg.led_entity || "")}" placeholder="switch.keypad_led_1" style="min-width:160px">
         </div>`;
     }
-
     return `<div class="extra-config">${inner}</div>`;
   }
 
@@ -1109,24 +828,19 @@ class LutronKeypadsPanel extends HTMLElement {
         : at === "none"
           ? "Select an Action Type above to assign entities."
           : "This action type requires no entity assignment.";
-      return `
-        <div class="tree-section">
-          <div class="tree-empty">${msg}</div>
-        </div>`;
+      return `<div class="tree-section"><div class="tree-empty">${msg}</div></div>`;
     }
 
     const entities = this._getEntitiesForAction(at);
     const byArea = this._groupByArea(entities);
     const areaKeys = Object.keys(byArea).sort((a, b) => {
-      if (a === "_none") return 1;
-      if (b === "_none") return -1;
+      if (a === "_none") return 1; if (b === "_none") return -1;
       return areaName(this._hass, a).localeCompare(areaName(this._hass, b));
     });
 
     const isMulti = info?.multi || false;
     const selectedTargets = this._getSelectedTargets(btnCfg);
 
-    // Area filter options
     const areaOpts = areaKeys
       .filter(k => k !== "_none")
       .map(k => `<option value="${k}" ${k === this._filterArea ? "selected" : ""}>${areaName(this._hass, k)}</option>`)
@@ -1135,7 +849,6 @@ class LutronKeypadsPanel extends HTMLElement {
     let treeHtml = "";
     for (const areaId of areaKeys) {
       if (this._filterArea && areaId !== this._filterArea && areaId !== "_none") continue;
-
       const areaEntities = byArea[areaId];
       const expanded = this._expandedAreas.has(areaId);
       const selCount = areaEntities.filter(e => selectedTargets.includes(e.entity_id)).length;
@@ -1150,7 +863,7 @@ class LutronKeypadsPanel extends HTMLElement {
             <input type="checkbox" class="area-check" data-area-check="${areaId}"
                    ${allSel ? "checked" : ""} ${someSel ? "data-indeterminate" : ""}>
             <span class="area-name">${this._esc(label)}</span>
-            <span class="area-count">${selCount > 0 ? selCount + " of " : ""}${areaEntities.length} ${selCount > 0 ? "Active" : "Zones"}</span>
+            <span class="area-count">${selCount > 0 ? selCount + " of " : ""}${areaEntities.length} ${selCount > 0 ? "selected" : "available"}</span>
           </div>
           <div class="area-entities ${expanded ? "open" : ""}" id="area-ents-${areaId}">
             ${areaEntities.map(ent => this._renderEntityRow(ent, selectedTargets, isMulti)).join("")}
@@ -1158,9 +871,7 @@ class LutronKeypadsPanel extends HTMLElement {
         </div>`;
     }
 
-    if (!treeHtml) {
-      treeHtml = `<div class="tree-empty">No entities found for this action type.</div>`;
-    }
+    if (!treeHtml) treeHtml = `<div class="tree-empty">No entities found for this action type.</div>`;
 
     return `
       <div class="tree-section">
@@ -1172,9 +883,7 @@ class LutronKeypadsPanel extends HTMLElement {
           </select>
           <button class="expand-all" id="btn-expand-all">Expand All</button>
         </div>
-        <div class="tree-container">
-          ${treeHtml}
-        </div>
+        <div class="tree-container">${treeHtml}</div>
       </div>`;
   }
 
@@ -1198,22 +907,56 @@ class LutronKeypadsPanel extends HTMLElement {
       </div>`;
   }
 
-  // ── Summary table ──────────────────────────────────────────────
+  // ── Summary / Programming table (bottom) ──────────────────────
 
-  _renderSummarySection(entry, btnCfg) {
+  _renderSummarySection(entry, btnCfg, isRL) {
     const at = btnCfg.action_type || "none";
     const info = ACTION_TYPES[at];
     const targets = this._getSelectedTargets(btnCfg);
+    const entSettings = btnCfg.entity_settings || {};
 
-    if (!targets.length) {
+    // For raise/lower and none: simple info message
+    if (isRL || at === "none") {
+      const msg = isRL
+        ? "Raise/Lower buttons inherit context from the last active button."
+        : "No action configured for this button.";
       return `
         <div class="summary-section" id="summary-section" style="height:${this._summaryHeight}px">
-          <div class="summary-header">
-            <span>Programming — Button ${this._selectedButton}</span>
-          </div>
-          <div class="summary-empty">No items programmed for this button.</div>
+          <div class="summary-header"><span>Programming — Button ${this._selectedButton}</span></div>
+          <div class="summary-empty">${msg}</div>
         </div>`;
     }
+
+    if (targets.length === 0) {
+      const hint = info?.domains?.length
+        ? `Select ${info.multi ? "one or more entities" : "an entity"} from the panel above to assign to this button.`
+        : "";
+      return `
+        <div class="summary-section" id="summary-section" style="height:${this._summaryHeight}px">
+          <div class="summary-header"><span>Programming — Button ${this._selectedButton} (${info?.label || at})</span></div>
+          <div class="summary-empty">No entities assigned.${hint ? " " + hint : ""}</div>
+        </div>`;
+    }
+
+    // Determine which capability columns to show
+    const isEntityToggle = at === "entity_toggle";
+    let hasAnyBri = false, hasAnyCT = false, hasAnyColor = false;
+    if (isEntityToggle) {
+      for (const eid of targets) {
+        const caps = getLightCaps(this._hass, eid);
+        if (caps?.brightness) hasAnyBri = true;
+        if (caps?.colorTemp)  hasAnyCT = true;
+        if (caps?.color)      hasAnyColor = true;
+      }
+    }
+
+    const colHeaders = `
+      <th>Entity</th>
+      <th>Current</th>
+      ${hasAnyBri   ? "<th>Brightness&nbsp;%</th>" : ""}
+      ${hasAnyCT    ? "<th>Color&nbsp;Temp&nbsp;K</th>" : ""}
+      ${hasAnyColor ? "<th>Color</th>" : ""}
+      <th></th>`;
 
     const rows = targets.map(entityId => {
       const stateObj = this._hass.states?.[entityId];
@@ -1226,26 +969,74 @@ class LutronKeypadsPanel extends HTMLElement {
       const domain = entityId.split(".")[0];
       const domLabel = DOMAIN_LABELS[domain] || domain;
       const stateLabel = entityStateLabel(entityId, stateVal, attrs);
+      const isOn = stateVal && !["off","closed","unavailable","unknown"].includes(stateVal);
       const desc = area ? `${area} › ${name}` : name;
+      const caps = getLightCaps(this._hass, entityId);
+      const ent_s = entSettings[entityId] || {};
+
+      let briCell = "", ctCell = "", colorCell = "";
+      if (isEntityToggle) {
+        if (hasAnyBri) {
+          if (caps?.brightness) {
+            const val = ent_s.brightness > 0 ? ent_s.brightness : "";
+            briCell = `<td><input class="ent-setting" type="number" min="1" max="100"
+                         data-entity="${entityId}" data-key="brightness"
+                         value="${val}" placeholder="—" title="Target brightness %"></td>`;
+          } else {
+            briCell = `<td><span class="no-cap">—</span></td>`;
+          }
+        }
+        if (hasAnyCT) {
+          if (caps?.colorTemp) {
+            const val = ent_s.color_temp > 0 ? ent_s.color_temp : "";
+            ctCell = `<td><input class="ent-setting" type="number" min="1500" max="9000" step="50"
+                        data-entity="${entityId}" data-key="color_temp"
+                        value="${val}" placeholder="—" title="Target color temperature in Kelvin"></td>`;
+          } else {
+            ctCell = `<td><span class="no-cap">—</span></td>`;
+          }
+        }
+        if (hasAnyColor) {
+          if (caps?.color) {
+            const hs = ent_s.hs_color;
+            const hexVal = hs ? hsToHex(hs[0], hs[1]) : "#ffffff";
+            const hasColor = hs && (hs[0] !== 0 || hs[1] !== 0);
+            colorCell = `<td>
+              <input class="ent-color-input" type="color"
+                     data-entity="${entityId}" data-key="hs_color"
+                     value="${hexVal}" title="Target color"
+                     style="${hasColor ? "" : "opacity:0.35"}">
+            </td>`;
+          } else {
+            colorCell = `<td><span class="no-cap">—</span></td>`;
+          }
+        }
+      }
 
       return `
         <tr>
-          <td><span class="type-badge">${domLabel}</span></td>
-          <td>${this._esc(desc)}</td>
-          <td>${stateLabel}</td>
+          <td>
+            <span class="type-badge">${domLabel}</span>
+            <span style="margin-left:6px;font-size:12px">${this._esc(desc)}</span>
+          </td>
+          <td class="${isOn ? "state-on" : ""}" style="white-space:nowrap">${stateLabel || "—"}</td>
+          ${briCell}${ctCell}${colorCell}
           <td><button class="remove-entity" data-remove="${entityId}" title="Remove">✕</button></td>
         </tr>`;
     }).join("");
+
+    const capHint = isEntityToggle && (hasAnyBri || hasAnyCT || hasAnyColor)
+      ? `<span class="cap-hint">Per-fixture targets applied when turning on</span>`
+      : "";
 
     return `
       <div class="summary-section" id="summary-section" style="height:${this._summaryHeight}px">
         <div class="summary-header">
           <span>Programming — Button ${this._selectedButton} (${info?.label || at})</span>
+          ${capHint}
         </div>
         <table class="summary-table">
-          <thead><tr>
-            <th>Type</th><th>Item Description</th><th>Setting</th><th></th>
-          </tr></thead>
+          <thead><tr>${colHeaders}</tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>`;
@@ -1276,12 +1067,11 @@ class LutronKeypadsPanel extends HTMLElement {
       if (!isNaN(n)) { this._selectedButton = n; this._renderMain(); }
     });
 
-    // Label field
+    // Label
     const inpLabel = shadow.getElementById("inp-label");
     if (inpLabel) {
       inpLabel.addEventListener("change", () => {
         this._setBtnProp("label", inpLabel.value);
-        // Refresh keypad visual only (avoid full re-render on every keystroke)
         shadow.querySelectorAll(`[data-kp-btn="${this._selectedButton}"]`).forEach(el => {
           if (!el.classList.contains("raise-lower")) el.textContent = inpLabel.value || `Btn ${this._selectedButton}`;
         });
@@ -1300,9 +1090,7 @@ class LutronKeypadsPanel extends HTMLElement {
 
     // LED logic
     const selLed = shadow.getElementById("sel-led-logic");
-    if (selLed) {
-      selLed.addEventListener("change", () => this._setBtnProp("led_mode", selLed.value));
-    }
+    if (selLed) selLed.addEventListener("change", () => this._setBtnProp("led_mode", selLed.value));
 
     // Cycle dim
     const chkCycle = shadow.getElementById("chk-cycle-dim");
@@ -1312,16 +1100,9 @@ class LutronKeypadsPanel extends HTMLElement {
     const chkInvert = shadow.getElementById("chk-led-invert");
     if (chkInvert) chkInvert.addEventListener("change", () => this._setBtnProp("led_invert", chkInvert.checked));
 
-    // Extra config fields
-    const inpBri = shadow.getElementById("inp-brightness");
-    if (inpBri) inpBri.addEventListener("change", () => this._setBtnProp("target_brightness", parseInt(inpBri.value) || 0));
-
-    const inpCCT = shadow.getElementById("inp-cct");
-    if (inpCCT) inpCCT.addEventListener("change", () => this._setBtnProp("target_color_temp", parseInt(inpCCT.value) || 0));
-
+    // Extra config (stateful_scene)
     const inpSG = shadow.getElementById("inp-scene-group");
     if (inpSG) inpSG.addEventListener("change", () => this._setBtnProp("scene_group", inpSG.value.trim()));
-
     const inpLedEnt = shadow.getElementById("inp-led-entity");
     if (inpLedEnt) inpLedEnt.addEventListener("change", () => this._setBtnProp("led_entity", inpLedEnt.value.trim()));
 
@@ -1342,30 +1123,24 @@ class LutronKeypadsPanel extends HTMLElement {
         const entities = this._getEntitiesForAction(at);
         const byArea = this._groupByArea(entities);
         const allExpanded = Object.keys(byArea).every(k => this._expandedAreas.has(k));
-        if (allExpanded) {
-          Object.keys(byArea).forEach(k => this._expandedAreas.delete(k));
-        } else {
-          Object.keys(byArea).forEach(k => this._expandedAreas.add(k));
-        }
+        if (allExpanded) Object.keys(byArea).forEach(k => this._expandedAreas.delete(k));
+        else Object.keys(byArea).forEach(k => this._expandedAreas.add(k));
         this._renderMain();
       });
     }
 
-    // Area toggle (expand/collapse)
+    // Area toggle
     shadow.querySelectorAll("[data-area-toggle]").forEach(el => {
       el.addEventListener("click", (e) => {
-        if (e.target.type === "checkbox") return; // let checkbox handle it
+        if (e.target.type === "checkbox") return;
         const areaId = el.dataset.areaToggle;
-        if (this._expandedAreas.has(areaId)) {
-          this._expandedAreas.delete(areaId);
-        } else {
-          this._expandedAreas.add(areaId);
-        }
+        if (this._expandedAreas.has(areaId)) this._expandedAreas.delete(areaId);
+        else this._expandedAreas.add(areaId);
         this._renderMain();
       });
     });
 
-    // Area checkboxes (select/deselect all in area)
+    // Area checkboxes
     shadow.querySelectorAll("[data-area-check]").forEach(el => {
       el.addEventListener("change", (e) => {
         e.stopPropagation();
@@ -1373,11 +1148,7 @@ class LutronKeypadsPanel extends HTMLElement {
         const at = (this._pendingConfig[this._selectedEntryId] || {})[this._selectedButton]?.action_type || "none";
         const entities = this._getEntitiesForAction(at);
         const areaEnts = entities.filter(ent => (resolveAreaId(ent.entity_id, this._hass) || "_none") === areaId);
-        if (el.checked) {
-          areaEnts.forEach(ent => this._selectEntity(ent.entity_id, true));
-        } else {
-          areaEnts.forEach(ent => this._selectEntity(ent.entity_id, false));
-        }
+        areaEnts.forEach(ent => this._selectEntity(ent.entity_id, el.checked));
         this._renderMain();
       });
     });
@@ -1388,16 +1159,13 @@ class LutronKeypadsPanel extends HTMLElement {
         const entityId = el.dataset.entityCheck;
         const at = (this._pendingConfig[this._selectedEntryId] || {})[this._selectedButton]?.action_type || "none";
         const isMulti = ACTION_TYPES[at]?.multi || false;
-        if (!isMulti) {
-          this._setBtnProp("action_target", entityId);
-        } else {
-          this._selectEntity(entityId, el.checked);
-        }
+        if (!isMulti) this._setBtnProp("action_target", entityId);
+        else this._selectEntity(entityId, el.checked);
         this._renderMain();
       });
     });
 
-    // Entity row click (also triggers checkbox)
+    // Entity row click
     shadow.querySelectorAll(".entity-row").forEach(el => {
       el.addEventListener("click", (e) => {
         if (e.target.type === "checkbox" || e.target.type === "radio") return;
@@ -1414,12 +1182,30 @@ class LutronKeypadsPanel extends HTMLElement {
       });
     });
 
-    // Set indeterminate on area checkboxes
-    shadow.querySelectorAll("[data-indeterminate]").forEach(el => {
-      el.indeterminate = true;
+    // Per-entity setting inputs in summary (no re-render on change)
+    shadow.querySelectorAll(".ent-setting").forEach(el => {
+      el.addEventListener("change", () => {
+        const entityId = el.dataset.entity;
+        const key = el.dataset.key;
+        const val = parseInt(el.value) || 0;
+        this._setEntitySetting(entityId, key, val > 0 ? val : null);
+      });
     });
 
-    // Wire up keypad and summary resizers (re-bound each render)
+    // Per-entity color inputs in summary
+    shadow.querySelectorAll(".ent-color-input").forEach(el => {
+      el.addEventListener("change", () => {
+        const entityId = el.dataset.entity;
+        const hs = hexToHs(el.value);
+        el.style.opacity = (hs[0] === 0 && hs[1] === 0) ? "0.35" : "1";
+        this._setEntitySetting(entityId, "hs_color", hs);
+      });
+    });
+
+    // Set indeterminate state on area checkboxes
+    shadow.querySelectorAll("[data-indeterminate]").forEach(el => { el.indeterminate = true; });
+
+    // Init resizers (keypad and summary ones re-bound each render)
     this._initResizers();
   }
 
@@ -1428,47 +1214,36 @@ class LutronKeypadsPanel extends HTMLElement {
   _initResizers() {
     const shadow = this._shadow;
 
-    // Sidebar ↔ Main — bound once; the sidebar element persists across renders
     if (!this._sidebarResizerBound) {
       const sidebarResizer = shadow.getElementById("sidebar-resizer");
       const sidebar = shadow.getElementById("sidebar");
       if (sidebarResizer && sidebar) {
-        this._setupHorizontalResizer(sidebarResizer, sidebar, 140, 450, w => {
-          this._sidebarWidth = w;
-        });
+        this._setupHorizontalResizer(sidebarResizer, sidebar, 140, 450, w => { this._sidebarWidth = w; });
         this._sidebarResizerBound = true;
       }
     }
 
-    // Keypad column ↔ Right column — re-bound each render
     const keypayResizer = shadow.getElementById("keypad-resizer");
     const colKeypad = shadow.querySelector(".col-keypad");
     if (keypayResizer && colKeypad) {
-      this._setupHorizontalResizer(keypayResizer, colKeypad, 120, 380, w => {
-        this._keypayWidth = w;
-      });
+      this._setupHorizontalResizer(keypayResizer, colKeypad, 120, 380, w => { this._keypayWidth = w; });
     }
 
-    // Prog-body ↔ Summary — re-bound each render; drag upward expands summary
     const summaryResizer = shadow.getElementById("summary-resizer");
     const summarySection = shadow.getElementById("summary-section");
     if (summaryResizer && summarySection) {
-      this._setupVerticalResizer(summaryResizer, summarySection, 60, 600, h => {
-        this._summaryHeight = h;
-      });
+      this._setupVerticalResizer(summaryResizer, summarySection, 60, 600, h => { this._summaryHeight = h; });
     }
   }
 
   _setupHorizontalResizer(handle, target, min, max, onResize) {
     let startX, startW;
     handle.addEventListener("mousedown", e => {
-      startX = e.clientX;
-      startW = target.getBoundingClientRect().width;
+      startX = e.clientX; startW = target.getBoundingClientRect().width;
       handle.classList.add("dragging");
       const onMove = ev => {
         const w = Math.max(min, Math.min(max, startW + ev.clientX - startX));
-        target.style.width = w + "px";
-        onResize(w);
+        target.style.width = w + "px"; onResize(w);
       };
       const onUp = () => {
         handle.classList.remove("dragging");
@@ -1484,14 +1259,11 @@ class LutronKeypadsPanel extends HTMLElement {
   _setupVerticalResizer(handle, target, min, max, onResize) {
     let startY, startH;
     handle.addEventListener("mousedown", e => {
-      startY = e.clientY;
-      startH = target.getBoundingClientRect().height;
+      startY = e.clientY; startH = target.getBoundingClientRect().height;
       handle.classList.add("dragging");
       const onMove = ev => {
-        // Drag upward (negative delta) increases the summary height
         const h = Math.max(min, Math.min(max, startH + startY - ev.clientY));
-        target.style.height = h + "px";
-        onResize(h);
+        target.style.height = h + "px"; onResize(h);
       };
       const onUp = () => {
         handle.classList.remove("dragging");
@@ -1506,17 +1278,30 @@ class LutronKeypadsPanel extends HTMLElement {
 
   // ── State helpers ──────────────────────────────────────────────
 
-  _getEntry(entryId) {
-    return this._entries.find(e => e.entry_id === entryId);
-  }
+  _getEntry(entryId) { return this._entries.find(e => e.entry_id === entryId); }
 
   _setBtnProp(key, value) {
     const entryId = this._selectedEntryId;
     if (!this._pendingConfig[entryId]) return;
-    if (!this._pendingConfig[entryId][this._selectedButton]) {
+    if (!this._pendingConfig[entryId][this._selectedButton])
       this._pendingConfig[entryId][this._selectedButton] = defaultBtnCfg();
-    }
     this._pendingConfig[entryId][this._selectedButton][key] = value;
+    this._dirty[entryId] = true;
+    this._updateSaveButton();
+  }
+
+  _setEntitySetting(entityId, key, value) {
+    const entryId = this._selectedEntryId;
+    if (!entryId || !this._pendingConfig[entryId]) return;
+    const btnCfg = this._pendingConfig[entryId][this._selectedButton];
+    if (!btnCfg) return;
+    if (!btnCfg.entity_settings) btnCfg.entity_settings = {};
+    if (!btnCfg.entity_settings[entityId]) btnCfg.entity_settings[entityId] = {};
+    if (value === null || value === undefined || value === 0) {
+      delete btnCfg.entity_settings[entityId][key];
+    } else {
+      btnCfg.entity_settings[entityId][key] = value;
+    }
     this._dirty[entryId] = true;
     this._updateSaveButton();
   }
@@ -1536,11 +1321,8 @@ class LutronKeypadsPanel extends HTMLElement {
       let targets = Array.isArray(btnCfg.action_target)
         ? [...btnCfg.action_target]
         : (btnCfg.action_target ? [btnCfg.action_target] : []);
-      if (selected) {
-        if (!targets.includes(entityId)) targets.push(entityId);
-      } else {
-        targets = targets.filter(t => t !== entityId);
-      }
+      if (selected) { if (!targets.includes(entityId)) targets.push(entityId); }
+      else targets = targets.filter(t => t !== entityId);
       btnCfg.action_target = targets;
     }
     this._dirty[entryId] = true;
@@ -1559,15 +1341,10 @@ class LutronKeypadsPanel extends HTMLElement {
   _getEntitiesForAction(actionType) {
     const info = ACTION_TYPES[actionType];
     if (!info || !info.domains.length) return [];
-
     const result = [];
-    const allEntities = this._hass.entities || {};
-    for (const [entityId, ent] of Object.entries(allEntities)) {
+    for (const [entityId, ent] of Object.entries(this._hass.entities || {})) {
       if (!info.domains.some(d => entityId.startsWith(d + "."))) continue;
-      result.push({
-        entity_id: entityId,
-        name: friendlyName(this._hass, entityId, ent),
-      });
+      result.push({ entity_id: entityId, name: friendlyName(this._hass, entityId, ent) });
     }
     result.sort((a, b) => a.name.localeCompare(b.name));
     return result;
@@ -1596,9 +1373,7 @@ class LutronKeypadsPanel extends HTMLElement {
 
     const pending = this._pendingConfig[entryId] || {};
     const buttons = {};
-    for (const [btnNum, cfg] of Object.entries(pending)) {
-      buttons[String(btnNum)] = cfg;
-    }
+    for (const [btnNum, cfg] of Object.entries(pending)) buttons[String(btnNum)] = cfg;
 
     const saveBtn = this._shadow.getElementById("btn-save");
     const statusEl = this._shadow.getElementById("save-status");
@@ -1608,15 +1383,13 @@ class LutronKeypadsPanel extends HTMLElement {
     try {
       await this._hass.callWS({
         type: "lutron_keypad_controller/save_keypad_config",
-        entry_id: entryId,
-        buttons,
+        entry_id: entryId, buttons,
       });
       this._dirty[entryId] = false;
       if (statusEl) {
         statusEl.textContent = "✓ Saved";
         setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 3000);
       }
-      // Reload entry data
       await this._loadEntries();
       this._renderSidebar();
     } catch (e) {
@@ -1630,10 +1403,8 @@ class LutronKeypadsPanel extends HTMLElement {
 
   _esc(str) {
     return String(str || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 }
 
