@@ -588,7 +588,19 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        return await self.async_step_buttons(user_input)
+        """First options step: show panel link, then continue to wizard on submit."""
+        if user_input is not None:
+            return await self.async_step_buttons()
+
+        entry_id = self.config_entry.entry_id
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "panel_url": f"/lutron-keypads?entry={entry_id}",
+                "keypad_name": self.config_entry.title,
+            },
+        )
 
     async def async_step_buttons(
         self, user_input: dict[str, Any] | None = None

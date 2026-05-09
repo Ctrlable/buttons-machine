@@ -38,6 +38,10 @@
   },
   "options": {
     "step": {
+      "init": {
+        "title": "Configure {keypad_name}",
+        "description": "**Recommended:** Open the visual programming panel for a Lutron Designer-like experience.\n\nNavigate to **Lutron Keypads** in the HA sidebar, or go to [{panel_url}]({panel_url})\n\nOr click **Submit** below to use the basic step-by-step wizard."
+      },
       "buttons": {
         "title": "Configure All Buttons — {keypad_name}",
         "description": "Set a label and action type for each button. {raise_lower_note}{led_bindings}",

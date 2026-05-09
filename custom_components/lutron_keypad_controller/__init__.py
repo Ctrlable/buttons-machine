@@ -88,10 +88,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
+from homeassistant.components import frontend, websocket_api
 from homeassistant.core import HomeAssistant, Event, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.event import async_track_state_change_event
@@ -103,6 +105,8 @@ from homeassistant.const import (
     SERVICE_TOGGLE,
     ATTR_ENTITY_ID,
 )
+
+_COMPONENT_DIR = Path(__file__).parent
 
 from .const import (
     DOMAIN,
@@ -686,11 +690,91 @@ async def _async_debug_leds(hass: HomeAssistant, call) -> None:
     hass.bus.async_fire("lutron_keypad_controller_debug", {"report": report})
 
 
+# ── WebSocket API ─────────────────────────────────────────────────────────────
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/get_entries",
+})
+@websocket_api.async_response
+async def _ws_get_entries(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Return all config entries for this domain with their data and options."""
+    entries = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        entries.append({
+            "entry_id": entry.entry_id,
+            "title":    entry.title,
+            "data":     dict(entry.data),
+            "options":  dict(entry.options),
+            "state":    entry.state.value,
+        })
+    connection.send_result(msg["id"], entries)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"):     f"{DOMAIN}/save_keypad_config",
+    vol.Required("entry_id"): str,
+    vol.Required("buttons"):  dict,
+})
+@websocket_api.async_response
+async def _ws_save_keypad_config(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Save button configuration for a keypad from the programming panel."""
+    entry_id = msg["entry_id"]
+    buttons  = msg["buttons"]
+
+    entry = hass.config_entries.async_get_entry(entry_id)
+    if entry is None or entry.domain != DOMAIN:
+        connection.send_error(msg["id"], "not_found", f"Entry '{entry_id}' not found")
+        return
+
+    hass.config_entries.async_update_entry(entry, options={"buttons": buttons})
+    hass.async_create_task(hass.config_entries.async_reload(entry_id))
+    connection.send_result(msg["id"], {"success": True})
+
+
 # ── Setup ─────────────────────────────────────────────────────────────────────
+
+def _register_panel_once(hass: HomeAssistant) -> None:
+    """Register the programming panel and static JS path (idempotent)."""
+    if hass.data.get(DOMAIN, {}).get("_panel_registered"):
+        return
+
+    panel_js = _COMPONENT_DIR / "frontend" / "lutron_panel.js"
+    hass.http.register_static_path(
+        "/lutron_keypad_panel.js",
+        str(panel_js),
+        cache_headers=False,
+    )
+
+    try:
+        frontend.async_register_built_in_panel(
+            hass,
+            component_name="custom",
+            sidebar_title="Lutron Keypads",
+            sidebar_icon="mdi:keyboard-outline",
+            frontend_url_path="lutron-keypads",
+            config={
+                "_panel_custom": {
+                    "name": "lutron-keypad-panel",
+                    "module_url": "/lutron_keypad_panel.js",
+                }
+            },
+            require_admin=True,
+        )
+        _LOGGER.info("Lutron Keypads programming panel registered at /lutron-keypads")
+    except Exception as exc:
+        _LOGGER.warning("Could not register Lutron Keypads panel: %s", exc)
+
+    websocket_api.async_register_command(hass, _ws_get_entries)
+    websocket_api.async_register_command(hass, _ws_save_keypad_config)
+
+    hass.data.setdefault(DOMAIN, {})["_panel_registered"] = True
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up via configuration.yaml."""
     hass.data.setdefault(DOMAIN, {})
+
+    _register_panel_once(hass)
 
     if DOMAIN not in config:
         return True
@@ -714,6 +798,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault("controllers", [])
     hass.data[DOMAIN].setdefault("entry_controllers", {})
+
+    _register_panel_once(hass)
 
     buttons_cfg = _build_buttons_from_options(entry.options.get("buttons", {}))
 
