@@ -1477,7 +1477,8 @@ class LutronKeypadsController:
     _RAMP_INTERVAL = 0.40   # seconds between ticks (also used as transition time)
 
     _HOLD_ACTIONS = frozenset({
-        ACTION_ENTITY_TOGGLE, ACTION_STATEFUL_SCENE, ACTION_RAISE, ACTION_LOWER
+        ACTION_ENTITY_TOGGLE, ACTION_STATEFUL_SCENE, ACTION_RAISE, ACTION_LOWER,
+        ACTION_LIGHT_CYCLE_DIM,
     })
 
     @callback
@@ -1495,7 +1496,9 @@ class LutronKeypadsController:
         self._held[btn_num]           = False
 
         action = btn_cfg.get(CONF_ACTION_TYPE)
-        if action not in self._HOLD_ACTIONS:
+        # cycle_dim=true on any button opts into hold-to-dim regardless of action type
+        wants_hold = action in self._HOLD_ACTIONS or btn_cfg.get("cycle_dim", False)
+        if not wants_hold:
             self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
         else:
             # Arm hold timer starting from press — fires if finger is still down
@@ -1550,7 +1553,8 @@ class LutronKeypadsController:
         if btn_cfg is None:
             return
 
-        action = btn_cfg.get(CONF_ACTION_TYPE)
+        action    = btn_cfg.get(CONF_ACTION_TYPE)
+        cycle_dim = btn_cfg.get("cycle_dim", False)
 
         if action == ACTION_RAISE:
             direction = "up"
@@ -1558,6 +1562,10 @@ class LutronKeypadsController:
         elif action == ACTION_LOWER:
             direction = "down"
             entities  = self._get_last_ramp_lights()
+        elif action == ACTION_LIGHT_CYCLE_DIM or cycle_dim:
+            # Hold → ramp the button's own assigned lights continuously
+            entities  = self._get_btn_light_entities(btn_cfg)
+            direction = self._next_ramp_dir(btn_num, entities)
         else:
             # entity_toggle / stateful_scene: only ramp when LED is currently ON
             if not self._is_btn_led_on(btn_num):
@@ -1691,7 +1699,7 @@ class LutronKeypadsController:
     def _get_btn_light_entities(self, btn_cfg: dict) -> list[str]:
         """Return light entity_ids rampable for this button's action."""
         action = btn_cfg.get(CONF_ACTION_TYPE)
-        if action == ACTION_ENTITY_TOGGLE:
+        if action in (ACTION_ENTITY_TOGGLE, ACTION_LIGHT_CYCLE_DIM):
             return [
                 e for e in _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
                 if e.startswith("light.")
@@ -1704,6 +1712,12 @@ class LutronKeypadsController:
                     e for e in st.attributes.get("entity_id", [])
                     if e.startswith("light.")
                 ]
+        # cycle_dim checkbox on other action types: pull from action_target if it's lights
+        if btn_cfg.get("cycle_dim", False):
+            return [
+                e for e in _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
+                if e.startswith("light.")
+            ]
         return []
 
     def _scene_light_entities(self, scene_id: str) -> list[str]:

@@ -760,6 +760,18 @@ class LutronKeypadsPanel extends HTMLElement {
     const ledMode = btnCfg.led_mode || "room";
     const cycleDim = btnCfg.cycle_dim ? "checked" : "";
 
+    // Cycle Dim checkbox only applies to actions that have assigned light entities
+    const CYCLE_DIM_ACTIONS = new Set(["entity_toggle", "light_cycle_dim", "stateful_scene"]);
+    const showCycleDim = !isRL && CYCLE_DIM_ACTIONS.has(at);
+    // For light_cycle_dim the behaviour is always tap-to-step / hold-to-ramp,
+    // so the checkbox is forced on and the label clarifies.
+    const cycleDimForced = at === "light_cycle_dim";
+    const cycleDimChecked = cycleDimForced ? "checked" : cycleDim;
+    const cycleDimDisabled = cycleDimForced ? "disabled" : (isRL ? "disabled" : "");
+    const cycleDimTitle = cycleDimForced
+      ? 'title="Dim Cycle always uses tap-to-step / hold-to-ramp"'
+      : 'title="Hold to dim continuously; tap for normal action"';
+
     const atOptions = Object.entries(ACTION_TYPES).map(([val, info]) =>
       `<option value="${val}" ${val === at ? "selected" : ""}>${info.label}</option>`
     ).join("");
@@ -777,10 +789,11 @@ class LutronKeypadsPanel extends HTMLElement {
           <label>LED Logic</label>
           <select id="sel-led-logic" ${isRL ? "disabled" : ""}>${ledOptions}</select>
         </div>
-        <label class="checkbox-field">
-          <input id="chk-cycle-dim" type="checkbox" ${cycleDim} ${isRL ? "disabled" : ""}>
-          Cycle Dim
-        </label>
+        ${showCycleDim ? `
+        <label class="checkbox-field" ${cycleDimTitle}>
+          <input id="chk-cycle-dim" type="checkbox" ${cycleDimChecked} ${cycleDimDisabled}>
+          Hold to Dim
+        </label>` : ""}
         <label class="checkbox-field">
           <input id="chk-led-invert" type="checkbox" ${btnCfg.led_invert ? "checked" : ""} ${isRL ? "disabled" : ""}>
           Invert LED
