@@ -292,6 +292,120 @@ def _iter_lutron_bridges(hass: HomeAssistant):
             if bridge is not None:
                 yield bridge
 
+_RAISE_RL_RE = _re.compile(r"\braise\b", _re.IGNORECASE)
+_LOWER_RL_RE = _re.compile(r"\blower\b", _re.IGNORECASE)
+
+
+async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Detect and store button layout for entries that were set up before detection worked.
+
+    Runs at startup only when button_numbers is absent from entry.data.
+    Uses bridge.buttons (HomeWorks QSX / RA3) — the authoritative per-button dict.
+    """
+    if entry.data.get("button_numbers"):
+        return  # already detected
+
+    serial    = str(entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
+    device_id = str(entry.data.get("device_id", "")).strip()
+    area_name = entry.data.get(CONF_AREA_NAME, "")
+    device_name = entry.data.get(CONF_DEVICE_NAME, "")
+    if not serial:
+        return
+
+    def _strip_eng(full_name: str, area: str, dev: str) -> str:
+        name = full_name.strip()
+        for prefix in [f"{area} {dev}", dev, area]:
+            prefix = prefix.strip()
+            if prefix and name.lower().startswith(prefix.lower()):
+                name = name[len(prefix):].strip()
+                break
+        return name.title() if name else full_name.strip()
+
+    for bridge in _iter_lutron_bridges(hass):
+        all_btns: dict = getattr(bridge, "buttons", None) or {}
+        if not all_btns:
+            continue
+
+        candidates = [
+            b for b in all_btns.values()
+            if (serial    and str(b.get("serial", ""))         == serial)
+            or (device_id and str(b.get("parent_device", "")) == device_id)
+        ]
+        if not candidates:
+            continue
+
+        btn_nums: list[int] = []
+        raise_btn: int | None = None
+        lower_btn: int | None = None
+        btn_names: dict[str, str] = {}
+        no_led_buttons: list[int] = []
+
+        for btn in candidates:
+            bnum_raw = btn.get("button_number")
+            if bnum_raw is None:
+                continue
+            try:
+                bnum = int(bnum_raw)
+            except (TypeError, ValueError):
+                continue
+
+            raw     = btn.get("button_name") or btn.get("name", "")
+            lc      = raw.lower()
+            has_led = btn.get("button_led") is not None
+
+            # Name-based detection is authoritative
+            if lc.endswith((" raise", "-raise", " up", "-up")) or _RAISE_RL_RE.search(raw):
+                raise_btn = bnum
+            elif lc.endswith((" lower", "-lower", " down", "-down")) or _LOWER_RL_RE.search(raw):
+                lower_btn = bnum
+            elif not has_led:
+                # No LED = no scene indicator = raise/lower physical button
+                no_led_buttons.append(bnum)
+
+            btn_nums.append(bnum)
+            eng = _strip_eng(raw, area_name, device_name)
+            if eng:
+                btn_names[str(bnum)] = eng
+
+        # Assign raise/lower from no-LED buttons (Lutron: odd=raise, even=lower)
+        for n in sorted(no_led_buttons):
+            if n % 2 == 1 and raise_btn is None:
+                raise_btn = n
+            elif n % 2 == 0 and lower_btn is None:
+                lower_btn = n
+        # Sequential fallback when all no-LED buttons share the same parity
+        for n in sorted(no_led_buttons):
+            if raise_btn is None and n != lower_btn:
+                raise_btn = n
+            elif lower_btn is None and n != raise_btn:
+                lower_btn = n
+
+        btn_nums   = sorted(set(btn_nums))
+        configurable = [n for n in btn_nums if n not in (raise_btn, lower_btn)]
+
+        layout = {
+            "button_numbers":       btn_nums,
+            "configurable_buttons": configurable,
+            "raise_button":         raise_btn,
+            "lower_button":         lower_btn,
+            "button_names":         btn_names,
+            "leap_button_map":      {},
+        }
+        _LOGGER.info(
+            "Auto-detected layout for '%s' (serial=%s): %d buttons, "
+            "configurable=%s raise=%s lower=%s",
+            entry.title, serial, len(btn_nums), configurable, raise_btn, lower_btn,
+        )
+        hass.config_entries.async_update_entry(entry, data={**entry.data, **layout})
+        return
+
+    _LOGGER.warning(
+        "Could not auto-detect button layout for '%s' (serial=%s) — "
+        "bridge not found or carries no button data.",
+        entry.title, serial,
+    )
+
+
 async def _find_led_entities(
     hass: HomeAssistant, config_entry: ConfigEntry
 ) -> dict[int, str]:
@@ -813,16 +927,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await _register_panel_once(hass)
 
+    # Populate button layout for entries that were created before auto-detection worked.
+    await _auto_refresh_button_layout(hass, entry)
+
     buttons_cfg = _build_buttons_from_options(entry.options.get("buttons", {}))
 
     kp_cfg: dict = {
-        "name":           entry.title,
-        CONF_DEVICE_SERIAL: entry.data.get(CONF_DEVICE_SERIAL, ""),
-        CONF_DEVICE_NAME:   entry.data.get(CONF_DEVICE_NAME, ""),
-        CONF_AREA_NAME:     entry.data.get(CONF_AREA_NAME, ""),
-        CONF_KEYPAD_TYPE:   entry.data.get(CONF_KEYPAD_TYPE, "generic"),
-        "device_id":        entry.data.get("device_id", ""),
-        CONF_BUTTONS:       buttons_cfg,
+        "name":                 entry.title,
+        CONF_DEVICE_SERIAL:     entry.data.get(CONF_DEVICE_SERIAL, ""),
+        CONF_DEVICE_NAME:       entry.data.get(CONF_DEVICE_NAME, ""),
+        CONF_AREA_NAME:         entry.data.get(CONF_AREA_NAME, ""),
+        CONF_KEYPAD_TYPE:       entry.data.get(CONF_KEYPAD_TYPE, "generic"),
+        "device_id":            entry.data.get("device_id", ""),
+        "button_numbers":       entry.data.get("button_numbers", []),
+        "configurable_buttons": entry.data.get("configurable_buttons", []),
+        "raise_button":         entry.data.get("raise_button"),
+        "lower_button":         entry.data.get("lower_button"),
+        "button_names":         entry.data.get("button_names", {}),
+        "leap_button_map":      entry.data.get("leap_button_map", {}),
+        CONF_BUTTONS:           buttons_cfg,
     }
 
     ctrl = LutronKeypadsController(hass, kp_cfg, config_entry=entry)
