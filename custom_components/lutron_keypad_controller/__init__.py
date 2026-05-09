@@ -733,17 +733,26 @@ async def _ws_save_keypad_config(hass: HomeAssistant, connection, msg: dict) -> 
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
-def _register_panel_once(hass: HomeAssistant) -> None:
+async def _register_panel_once(hass: HomeAssistant) -> None:
     """Register the programming panel and static JS path (idempotent)."""
     if hass.data.get(DOMAIN, {}).get("_panel_registered"):
         return
 
     panel_js = _COMPONENT_DIR / "frontend" / "lutron_panel.js"
-    hass.http.register_static_path(
-        "/lutron_keypad_panel.js",
-        str(panel_js),
-        cache_headers=False,
-    )
+
+    # HA 2024.x renamed register_static_path → async_register_static_paths
+    try:
+        from homeassistant.components.http import StaticPathConfig
+        await hass.http.async_register_static_paths([
+            StaticPathConfig("/lutron_keypad_panel.js", str(panel_js), cache_headers=False)
+        ])
+    except (AttributeError, ImportError):
+        try:
+            hass.http.register_static_path(  # type: ignore[attr-defined]
+                "/lutron_keypad_panel.js", str(panel_js), cache_headers=False
+            )
+        except Exception as exc:
+            _LOGGER.warning("Could not register static path for panel: %s", exc)
 
     try:
         frontend.async_register_built_in_panel(
@@ -774,7 +783,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up via configuration.yaml."""
     hass.data.setdefault(DOMAIN, {})
 
-    _register_panel_once(hass)
+    await _register_panel_once(hass)
 
     if DOMAIN not in config:
         return True
@@ -799,7 +808,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].setdefault("controllers", [])
     hass.data[DOMAIN].setdefault("entry_controllers", {})
 
-    _register_panel_once(hass)
+    await _register_panel_once(hass)
 
     buttons_cfg = _build_buttons_from_options(entry.options.get("buttons", {}))
 
