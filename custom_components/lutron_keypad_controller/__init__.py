@@ -1886,15 +1886,21 @@ class LutronKeypadsController:
             )
             self._confirm_handles[btn_num] = handle
 
+    # Releases faster than this after press are hardware bounce (skip them).
+    # The SeeTouch HQRD-W6BRL bounces at 7-43 ms; real taps lift at ≥ ~100 ms.
+    _BOUNCE_WINDOW = 0.075  # seconds
+
     @callback
     def _handle_release(self, btn_num: int) -> None:
         """Synchronous release handler — drives the press/hold state machine.
 
-        This hardware (SeeTouch HQRD-W6BRL) always emits release #1 at ~7-43 ms
-        as a switch-bounce, regardless of whether the user taps or holds.  Release
-        #2 only arrives when the user physically lifts their finger:
-          - TAP : release #2 arrives before the hold timer fires (< 600 ms).
-          - HOLD: hold timer fires first; release #2 arrives later (> 1.9 s).
+        Some Lutron hardware (e.g. SeeTouch HQRD-W6BRL) emits a spurious
+        release ~7-43 ms after every press (switch bounce) then a real release
+        when the finger lifts.  Others send only ONE release at lift time.
+        We distinguish bounce from real lift by elapsed time, not release count:
+          - elapsed < _BOUNCE_WINDOW → bounce, skip (hold timer stays armed)
+          - elapsed ≥ _BOUNCE_WINDOW before hold timer → TAP, dispatch
+          - hold timer fires first → HOLD, start ramp; next release stops it
         """
         now     = asyncio.get_event_loop().time()
         elapsed = now - self._press_times.get(btn_num, now)
@@ -1916,20 +1922,18 @@ class LutronKeypadsController:
             self._ramp_end_times[btn_num] = now
             return
 
-        # ── Release #1 is always the switch bounce — skip it ─────────────────
-        # Hold timer remains armed.  We wait for release #2 to confirm a TAP,
-        # or let the hold timer fire first to confirm a HOLD.
-        if count == 1:
+        # ── Fast release within bounce window — hardware glitch, skip it ─────
+        if elapsed < self._BOUNCE_WINDOW:
             return
 
-        # ── Release #2 before hold timer fired → confirmed TAP ───────────────
+        # ── Real lift before hold timer fired → confirmed TAP ────────────────
         confirm = self._confirm_handles.pop(btn_num, None)
         if confirm is not None:
             confirm.cancel()
         btn_cfg = self._buttons.get(btn_num)
         if btn_cfg is not None and confirm is not None:
             _LOGGER.info(
-                "'%s': button %d TAP (release #2, elapsed=%.3fs)",
+                "'%s': button %d TAP (elapsed=%.3fs)",
                 self.name, btn_num, elapsed,
             )
             self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
