@@ -1928,6 +1928,21 @@ class LutronKeypadsController:
                 ramp.cancel()
             self._held.pop(btn_num, None)
             self._ramp_end_times[btn_num] = now
+            # If the ramp was cancelled within its first tick window (< RAMP_INTERVAL
+            # after the hold fired), the ramp coroutine may not have gotten CPU time
+            # to apply its first step.  For raise/lower, guarantee one step so a
+            # short hold always nudges brightness rather than silently doing nothing.
+            ramp_duration = elapsed - self._HOLD_CONFIRM
+            if ramp_duration < self._RAMP_INTERVAL:
+                btn_cfg = self._buttons.get(btn_num)
+                if btn_cfg is not None:
+                    action = btn_cfg.get(CONF_ACTION_TYPE)
+                    if action in (ACTION_RAISE, ACTION_LOWER):
+                        _LOGGER.debug(
+                            "'%s': button %d short hold (%.0fms in ramp) — dispatching single step",
+                            self.name, btn_num, ramp_duration * 1000,
+                        )
+                        self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
             return
 
         # ── Fast release within bounce window — hardware glitch, skip it ─────
