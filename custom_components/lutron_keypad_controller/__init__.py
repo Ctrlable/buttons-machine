@@ -1828,6 +1828,7 @@ class LutronKeypadsController:
     #
     #   RELEASE #2 (arrives after hold timer / ramp active) → stop ramp.
     _HOLD_CONFIRM       = 0.30   # seconds after PRESS before hold event fires
+    _HOLD_CONFIRM_CYCLE = 0.70   # longer window for entity_toggle+cycle_dim: taps run 450-600ms
     _DOUBLE_TAP_WINDOW  = 0.40   # seconds — second press within this window triggers double_tap
     _RAMP_STEP_PCT      = 10     # brightness % per ramp tick
     _RAMP_INTERVAL      = 0.40   # seconds between ticks (also used as transition time)
@@ -1893,7 +1894,7 @@ class LutronKeypadsController:
             self._dispatched_on_press.add(btn_num)
             self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
             handle = self.hass.loop.call_later(
-                self._HOLD_CONFIRM, self._on_hold_event, btn_num,
+                self._HOLD_CONFIRM_CYCLE, self._on_hold_event, btn_num,
             )
             self._confirm_handles[btn_num] = handle
         else:
@@ -2239,17 +2240,29 @@ class LutronKeypadsController:
                 # the scene, not turn everything off.
                 if self._is_btn_led_on(btn_num):
                     # Scene active → deactivate: turn off or apply off-level brightness
+                    _LOGGER.info(
+                        "'%s': button %d PRESS OFF (scene mode) — LED was ON, applying off_level to %s",
+                        self.name, btn_num, entity_ids,
+                    )
                     for eid in entity_ids:
                         domain     = eid.split(".")[0]
                         off_ent    = off_level_ent.get(eid, {})
                         off_bri    = int(off_ent.get("brightness") or 0)
                         if domain == "light" and off_bri > 0:
+                            _LOGGER.info(
+                                "'%s': button %d  → %s dim to %d%%",
+                                self.name, btn_num, eid, off_bri,
+                            )
                             await self.hass.services.async_call(
                                 "light", SERVICE_TURN_ON,
                                 {ATTR_ENTITY_ID: eid, "brightness_pct": off_bri},
                                 blocking=True,
                             )
                         else:
+                            _LOGGER.info(
+                                "'%s': button %d  → %s turn OFF",
+                                self.name, btn_num, eid,
+                            )
                             await self.hass.services.async_call(
                                 domain, SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid},
                                 blocking=True,
@@ -2260,6 +2273,10 @@ class LutronKeypadsController:
                     # Scene not active → activate: apply per-entity target settings.
                     # LED is NOT written here — entity tracking sets it ON once the
                     # light actually reaches the target level.
+                    _LOGGER.info(
+                        "'%s': button %d PRESS ON (scene mode) — LED was OFF, activating scene on %s",
+                        self.name, btn_num, entity_ids,
+                    )
                     for eid in entity_ids:
                         if eid.startswith("light."):
                             ent_cfg  = entity_settings_map.get(eid, {})
@@ -2268,6 +2285,10 @@ class LutronKeypadsController:
                             ent_hs   = ent_cfg.get("hs_color")
                             ent_fade = float(ent_cfg.get("fade") or 0)
                             ent_dly  = float(ent_cfg.get("delay") or 0)
+                            _LOGGER.info(
+                                "'%s': button %d  → %s bri=%d%% cct=%dK fade=%.1fs",
+                                self.name, btn_num, eid, ent_bri, ent_cct, ent_fade,
+                            )
                             await self._apply_light_settings(
                                 eid, ent_bri, ent_cct, ent_hs, ent_fade, ent_dly
                             )
