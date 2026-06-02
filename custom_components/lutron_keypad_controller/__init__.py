@@ -1331,7 +1331,6 @@ class LutronKeypadsController:
         # Press-and-hold tracking (synchronous call_later state machine)
         self._press_times:      dict[int, float] = {}  # monotonic time of last press
         self._last_press_times: dict[int, float] = {}  # time of previous press (double-tap)
-        self._release_counts:   dict[int, int]   = {}  # releases seen since last press
         self._held:             dict[int, bool]  = {}  # True while hold-event ramp is active
         self._confirm_handles:  dict             = {}  # call_later handle: hold-confirm window
         self._ramp_tasks:   dict[int, asyncio.Task] = {}  # active ramp coroutine per button
@@ -1369,7 +1368,6 @@ class LutronKeypadsController:
             task.cancel()
         self._ramp_tasks.clear()
         self._press_times.clear()
-        self._release_counts.clear()
         self._held.clear()
         self._ramp_end_times.clear()
 
@@ -1807,25 +1805,20 @@ class LutronKeypadsController:
 
     # ── Press / release / hold event ─────────────────────────────────────────
     #
-    # Hardware reality: some Lutron bridges send an automatic "fake" release
-    # (~10–25 ms) on every press while the finger is still down; others send
-    # only ONE release when the finger actually lifts.  We handle both:
+    # Hardware model: Lutron keypads send exactly ONE press event when the
+    # button is pushed and ONE release event when the finger lifts.
     #
-    #   PRESS    → arm hold timer (_HOLD_CONFIRM ms from press).
-    #              Non-hold actions dispatch immediately on press.
+    #   PRESS  → arm hold timer (_HOLD_CONFIRM ms).
+    #            Non-hold actions dispatch immediately on press.
     #
-    #   RELEASE #1 → always a switch-bounce on this hardware (7–43 ms).
-    #              Indistinguishable from a tap at this point — skip it.
-    #              Hold timer remains armed.
+    #   RELEASE (before hold timer fires) → TAP: cancel timer → dispatch.
+    #   Releases faster than _BOUNCE_WINDOW are treated as electrical noise.
     #
-    #   RELEASE #2 (arrives before hold timer fires) → confirmed TAP:
-    #              cancel timer → dispatch action.
+    #   _on_hold_event fires (_HOLD_CONFIRM ms after press, no release yet):
+    #            HOLD: start ramp (or dispatch if LED is off / no rampable lights).
+    #            Next hold within 5 s alternates ramp direction.
     #
-    #   _on_hold_event fires (_HOLD_CONFIRM ms after press, only release #1 seen):
-    #              HOLD: start ramp (or dispatch if LED is off / no rampable lights).
-    #              Next hold within 5 s alternates ramp direction.
-    #
-    #   RELEASE #2 (arrives after hold timer / ramp active) → stop ramp.
+    #   RELEASE (after hold timer fires / ramp active) → stop ramp.
     _HOLD_CONFIRM       = 0.30   # seconds after PRESS before hold event fires
     _HOLD_CONFIRM_CYCLE = 0.70   # longer window for entity_toggle+cycle_dim: taps run 450-600ms
     _DOUBLE_TAP_WINDOW  = 0.40   # seconds — second press within this window triggers double_tap
@@ -1851,9 +1844,8 @@ class LutronKeypadsController:
         last_press = self._last_press_times.get(btn_num, 0)
         self._last_press_times[btn_num] = now
 
-        self._press_times[btn_num]    = now
-        self._release_counts[btn_num] = 0
-        self._held[btn_num]           = False
+        self._press_times[btn_num] = now
+        self._held[btn_num]        = False
 
         # Double-tap detection: second press within window + double_tap block configured
         v2_blocks        = btn_cfg.get("_v2_blocks", {})
@@ -1894,30 +1886,25 @@ class LutronKeypadsController:
             )
             self._confirm_handles[btn_num] = handle
 
-    # Releases faster than this after press are hardware bounce (skip them).
-    # The SeeTouch HQRD-W6BRL bounces at 7-43 ms; real taps lift at ≥ ~100 ms.
+    # Releases faster than this are electrical noise — skip them.
+    # Real taps lift at ≥ ~150 ms; 75 ms leaves safe margin.
     _BOUNCE_WINDOW = 0.075  # seconds
 
     @callback
     def _handle_release(self, btn_num: int) -> None:
         """Synchronous release handler — drives the press/hold state machine.
 
-        Some Lutron hardware (e.g. SeeTouch HQRD-W6BRL) emits a spurious
-        release ~7-43 ms after every press (switch bounce) then a real release
-        when the finger lifts.  Others send only ONE release at lift time.
-        We distinguish bounce from real lift by elapsed time, not release count:
-          - elapsed < _BOUNCE_WINDOW → bounce, skip (hold timer stays armed)
-          - elapsed ≥ _BOUNCE_WINDOW before hold timer → TAP, dispatch
-          - hold timer fires first → HOLD, start ramp; next release stops it
+        Lutron keypads send exactly one release when the finger lifts.
+          - elapsed < _BOUNCE_WINDOW → electrical noise, skip
+          - elapsed ≥ _BOUNCE_WINDOW before hold timer fires → TAP, dispatch
+          - hold timer fired first → HOLD was running; this release stops it
         """
         now     = asyncio.get_event_loop().time()
         elapsed = now - self._press_times.get(btn_num, now)
-        count   = self._release_counts.get(btn_num, 0) + 1
-        self._release_counts[btn_num] = count
 
         _LOGGER.debug(
-            "'%s': button %d release #%d elapsed=%.3fs held=%s confirm=%s",
-            self.name, btn_num, count, elapsed,
+            "'%s': button %d release elapsed=%.3fs held=%s confirm=%s",
+            self.name, btn_num, elapsed,
             self._held.get(btn_num), btn_num in self._confirm_handles,
         )
 
@@ -1963,8 +1950,8 @@ class LutronKeypadsController:
 
     @callback
     def _on_hold_event(self, btn_num: int) -> None:
-        """Internal hold event — fires _HOLD_CONFIRM seconds after the fake release
-        with no real release in between.  Routes to ramp or dispatch based on context.
+        """Internal hold event — fires _HOLD_CONFIRM seconds after press with no
+        release in between.  Routes to ramp or dispatch based on context.
         """
         self._confirm_handles.pop(btn_num, None)
 
