@@ -136,6 +136,7 @@ from .const import (
     ACTION_AUTOMATION,
     ACTION_SCRIPT,
     ACTION_ENTITY_TOGGLE,
+    ACTION_SINGLE_ACTION,
     ACTION_COVER_CYCLE,
     ACTION_LIGHT_CYCLE_DIM,
     ACTION_RAISE,
@@ -170,6 +171,7 @@ BUTTON_SCHEMA = vol.Schema(
                 ACTION_AUTOMATION,
                 ACTION_SCRIPT,
                 ACTION_ENTITY_TOGGLE,
+                ACTION_SINGLE_ACTION,
                 ACTION_COVER_CYCLE,
                 ACTION_LIGHT_CYCLE_DIM,
                 ACTION_RAISE,
@@ -1484,10 +1486,13 @@ class LutronKeypadsController:
         # For entity_toggle buttons the LED tracks entity states (Room/Scene Mode),
         # not the last button press, so we push the correct value immediately.
         btn_cfg = self._buttons.get(btn_num, {})
-        if btn_cfg.get(CONF_ACTION_TYPE) == ACTION_ENTITY_TOGGLE:
-            entities = _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
-            if entities:
+        action_type = btn_cfg.get(CONF_ACTION_TYPE)
+        entities = _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
+        if entities:
+            if action_type == ACTION_ENTITY_TOGGLE:
                 self._update_entity_toggle_led(btn_num, btn_cfg, entities)
+            elif action_type == ACTION_SINGLE_ACTION:
+                self._update_scene_mode_led(btn_num, entities)
 
     @callback
     def _update_entity_toggle_led(
@@ -1569,26 +1574,41 @@ class LutronKeypadsController:
         self._entity_tracking_unsubs.clear()
 
         for btn_num, btn_cfg in self._buttons.items():
-            if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_ENTITY_TOGGLE:
+            action_type = btn_cfg.get(CONF_ACTION_TYPE)
+            if action_type not in (ACTION_ENTITY_TOGGLE, ACTION_SINGLE_ACTION):
                 continue
             entities = _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
             if not entities:
                 continue
 
-            mode = btn_cfg.get(CONF_LED_MODE, LED_MODE_ROOM)
+            if action_type == ACTION_SINGLE_ACTION:
+                @callback
+                def _on_single_change(
+                    event: Any, _btn=btn_num, _ents=entities
+                ) -> None:
+                    self._update_scene_mode_led(_btn, _ents)
 
-            @callback
-            def _on_entity_change(
-                event: Any, _btn=btn_num, _cfg=btn_cfg, _ents=entities
-            ) -> None:
-                self._update_entity_toggle_led(_btn, _cfg, _ents)
+                unsub = async_track_state_change_event(self.hass, entities, _on_single_change)
+                self._entity_tracking_unsubs.append(unsub)
+                _LOGGER.debug(
+                    "'%s': button %d: single_action scene LED tracking %s",
+                    self.name, btn_num, entities,
+                )
+            else:
+                mode = btn_cfg.get(CONF_LED_MODE, LED_MODE_ROOM)
 
-            unsub = async_track_state_change_event(self.hass, entities, _on_entity_change)
-            self._entity_tracking_unsubs.append(unsub)
-            _LOGGER.debug(
-                "'%s': button %d: %s LED tracking %s",
-                self.name, btn_num, mode, entities,
-            )
+                @callback
+                def _on_entity_change(
+                    event: Any, _btn=btn_num, _cfg=btn_cfg, _ents=entities
+                ) -> None:
+                    self._update_entity_toggle_led(_btn, _cfg, _ents)
+
+                unsub = async_track_state_change_event(self.hass, entities, _on_entity_change)
+                self._entity_tracking_unsubs.append(unsub)
+                _LOGGER.debug(
+                    "'%s': button %d: %s LED tracking %s",
+                    self.name, btn_num, mode, entities,
+                )
 
     def register_state_sensor(self, sensor: Any) -> None:
         if sensor not in self._state_sensors:
@@ -1835,8 +1855,8 @@ class LutronKeypadsController:
     _RAMP_INTERVAL      = 0.40   # seconds between ticks (also used as transition time)
 
     _HOLD_ACTIONS = frozenset({
-        ACTION_ENTITY_TOGGLE, ACTION_STATEFUL_SCENE, ACTION_RAISE, ACTION_LOWER,
-        ACTION_LIGHT_CYCLE_DIM,
+        ACTION_ENTITY_TOGGLE, ACTION_SINGLE_ACTION, ACTION_STATEFUL_SCENE,
+        ACTION_RAISE, ACTION_LOWER, ACTION_LIGHT_CYCLE_DIM,
     })
 
     @callback
@@ -2153,7 +2173,7 @@ class LutronKeypadsController:
     def _get_btn_light_entities(self, btn_cfg: dict) -> list[str]:
         """Return light entity_ids rampable for this button's action."""
         action = btn_cfg.get(CONF_ACTION_TYPE)
-        if action in (ACTION_ENTITY_TOGGLE, ACTION_LIGHT_CYCLE_DIM):
+        if action in (ACTION_ENTITY_TOGGLE, ACTION_SINGLE_ACTION, ACTION_LIGHT_CYCLE_DIM):
             return [
                 e for e in _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
                 if e.startswith("light.")
@@ -2359,6 +2379,31 @@ class LutronKeypadsController:
                 else:
                     await self._entity_toggle(target)
                     await self._write_led_entity(btn_num, not pre_on)
+
+        elif action == ACTION_SINGLE_ACTION:
+            entity_ids = _normalize_targets(target)
+            global_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
+            global_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
+            entity_settings_map: dict = btn_cfg.get(CONF_ENTITY_SETTINGS, {})
+            _LOGGER.info(
+                "'%s': button %d SINGLE ACTION — activating %s",
+                self.name, btn_num, entity_ids,
+            )
+            for eid in entity_ids:
+                if eid.startswith("light."):
+                    ent_cfg  = entity_settings_map.get(eid, {})
+                    ent_bri  = int(ent_cfg.get("brightness") or global_bri)
+                    ent_cct  = int(ent_cfg.get("color_temp") or global_cct)
+                    ent_hs   = ent_cfg.get("hs_color")
+                    ent_fade = float(ent_cfg.get("fade") or 0)
+                    ent_dly  = float(ent_cfg.get("delay") or 0)
+                    await self._apply_light_settings(eid, ent_bri, ent_cct, ent_hs, ent_fade, ent_dly)
+                else:
+                    domain = eid.split(".")[0]
+                    await self.hass.services.async_call(
+                        domain, SERVICE_TURN_ON, {ATTR_ENTITY_ID: eid}, blocking=True,
+                    )
+            self._last_action = {"type": ACTION_SINGLE_ACTION, "entities": entity_ids}
 
         elif action == ACTION_COVER_CYCLE:
             await self._cover_cycle(btn_num, target)

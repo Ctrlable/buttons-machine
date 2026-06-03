@@ -61,6 +61,7 @@ const ACTION_TYPES = {
   automation:      { label: "Automation",     domains: ["automation"],  multi: false },
   script:          { label: "Script",         domains: ["script"],      multi: false },
   entity_toggle:   { label: "Entity Toggle",  domains: ["light","switch","fan","input_boolean","media_player","cover"], multi: true },
+  single_action:   { label: "Single Action",  domains: ["light","switch","fan","input_boolean","media_player","cover"], multi: true },
   cover_cycle:     { label: "Cover Cycle",    domains: ["cover"],       multi: true },
   light_cycle_dim: { label: "Dim Cycle",      domains: ["light"],       multi: true },
   raise:           { label: "Raise",          domains: [],              multi: false },
@@ -765,6 +766,7 @@ class LutronKeypadsPanel extends HTMLElement {
     this._dirty = {};
     this._expandedAreas = new Set();
     this._filterArea = "";
+    this._filterDomain = "";
     this._sidebarSearch = "";
     this._entitySearch = "";
     this._selectedDiscoveryDevice = null;
@@ -1015,6 +1017,9 @@ class LutronKeypadsPanel extends HTMLElement {
   _renderMain() {
     const main = this._shadow.getElementById("main-content");
     if (!main) return;
+
+    const savedTreeScroll = main.querySelector(".tree-container")?.scrollTop || 0;
+
     if (!this._selectedEntryId) {
       main.innerHTML = `
         <div class="welcome">
@@ -1056,6 +1061,11 @@ class LutronKeypadsPanel extends HTMLElement {
     `;
 
     this._attachMainListeners(entry, buttons, btnCfg);
+
+    if (savedTreeScroll > 0) {
+      const tc = main.querySelector(".tree-container");
+      if (tc) tc.scrollTop = savedTreeScroll;
+    }
   }
 
   // ── Keypad visual ──────────────────────────────────────────────
@@ -1406,9 +1416,11 @@ class LutronKeypadsPanel extends HTMLElement {
 
     const esq = (this._entitySearch || "").toLowerCase().trim();
     const allEntities = this._getEntitiesForAction(at);
-    const entities = esq
-      ? allEntities.filter(e => e.name.toLowerCase().includes(esq) || e.entity_id.toLowerCase().includes(esq))
-      : allEntities;
+    const entities = allEntities.filter(e => {
+      if (esq && !e.name.toLowerCase().includes(esq) && !e.entity_id.toLowerCase().includes(esq)) return false;
+      if (this._filterDomain && e.entity_id.split(".")[0] !== this._filterDomain) return false;
+      return true;
+    });
     const byArea = this._groupByArea(entities);
     const areaKeys = Object.keys(byArea).sort((a, b) => {
       if (a === "_none") return 1; if (b === "_none") return -1;
@@ -1423,6 +1435,12 @@ class LutronKeypadsPanel extends HTMLElement {
       .filter(k => k !== "_none")
       .map(k => `<option value="${k}" ${k === this._filterArea ? "selected" : ""}>${areaName(this._hass, k)}</option>`)
       .join("");
+
+    const domainFilterHtml = domains.length > 1 ? `
+      <select id="sel-filter-domain">
+        <option value="">All Types</option>
+        ${domains.map(d => `<option value="${d}" ${d === this._filterDomain ? "selected" : ""}>${d}</option>`).join("")}
+      </select>` : "";
 
     let treeHtml = "";
     for (const areaId of areaKeys) {
@@ -1463,6 +1481,7 @@ class LutronKeypadsPanel extends HTMLElement {
             <option value="">All Areas</option>
             ${areaOpts}
           </select>
+          ${domainFilterHtml}
           <button class="expand-all" id="btn-expand-all">Expand All</button>
         </div>
         <div class="tree-container">${treeHtml}</div>
@@ -1737,6 +1756,7 @@ class LutronKeypadsPanel extends HTMLElement {
       selAction.addEventListener("change", () => {
         this._setBtnProp("action_type", selAction.value);
         this._setBtnProp("action_target", "");
+        this._filterDomain = "";
         this._renderMain();
       });
     }
@@ -1783,6 +1803,15 @@ class LutronKeypadsPanel extends HTMLElement {
     if (selArea) {
       selArea.addEventListener("change", () => {
         this._filterArea = selArea.value;
+        this._renderMain();
+      });
+    }
+
+    // Domain filter
+    const selDomain = shadow.getElementById("sel-filter-domain");
+    if (selDomain) {
+      selDomain.addEventListener("change", () => {
+        this._filterDomain = selDomain.value;
         this._renderMain();
       });
     }

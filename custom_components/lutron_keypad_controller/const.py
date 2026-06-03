@@ -64,6 +64,7 @@ ACTION_HA_SCENE        = "ha_scene"
 ACTION_AUTOMATION      = "automation"
 ACTION_SCRIPT          = "script"
 ACTION_ENTITY_TOGGLE   = "entity_toggle"
+ACTION_SINGLE_ACTION   = "single_action"
 ACTION_COVER_CYCLE     = "cover_cycle"
 ACTION_LIGHT_CYCLE_DIM = "light_cycle_dim"
 ACTION_RAISE           = "raise"
@@ -76,6 +77,7 @@ ACTION_TYPES = [
     ACTION_AUTOMATION,
     ACTION_SCRIPT,
     ACTION_ENTITY_TOGGLE,
+    ACTION_SINGLE_ACTION,
     ACTION_COVER_CYCLE,
     ACTION_LIGHT_CYCLE_DIM,
     ACTION_RAISE,
@@ -107,6 +109,7 @@ ACTION_TYPE_LABELS: dict[str, str] = {
     ACTION_AUTOMATION:      "Automation",
     ACTION_SCRIPT:          "Script",
     ACTION_ENTITY_TOGGLE:   "Entity Toggle",
+    ACTION_SINGLE_ACTION:   "Single Action",
     ACTION_COVER_CYCLE:     "Cover Cycle",
     ACTION_LIGHT_CYCLE_DIM: "Dim Cycle",
     ACTION_RAISE:           "Raise",
@@ -122,6 +125,7 @@ ACTION_TYPE_DOMAINS: dict[str, list[str]] = {
     ACTION_AUTOMATION:      ["automation"],
     ACTION_SCRIPT:          ["script"],
     ACTION_ENTITY_TOGGLE:   ["light", "switch", "fan", "input_boolean", "media_player", "cover"],
+    ACTION_SINGLE_ACTION:   ["light", "switch", "fan", "input_boolean", "media_player", "cover"],
     ACTION_COVER_CYCLE:     ["cover"],
     ACTION_LIGHT_CYCLE_DIM: ["light"],
     ACTION_RAISE:           [],
@@ -131,6 +135,7 @@ ACTION_TYPE_DOMAINS: dict[str, list[str]] = {
 
 MULTI_ENTITY_ACTIONS: frozenset[str] = frozenset({
     ACTION_ENTITY_TOGGLE,
+    ACTION_SINGLE_ACTION,
     ACTION_COVER_CYCLE,
     ACTION_LIGHT_CYCLE_DIM,
 })
