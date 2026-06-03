@@ -1902,6 +1902,7 @@ class LutronKeypadsPanel extends HTMLElement {
     shadow.querySelectorAll(".entity-row").forEach(el => {
       el.addEventListener("click", (e) => {
         if (e.target.type === "checkbox" || e.target.type === "radio") return;
+        if (e.target.closest(".ent-row-settings")) return;
         const chk = el.querySelector("[data-entity-check]");
         if (chk) { chk.checked = !chk.checked; chk.dispatchEvent(new Event("change")); }
       });
