@@ -1243,7 +1243,7 @@ class LutronKeypadsPanel extends HTMLElement {
           <select id="sel-action-type">${atOptions}</select>
         </div>
       </div>`;
-    const showSettings = at === "entity_toggle";
+    const showSettings = at === "entity_toggle" || at === "single_action";
     return actionStrip + this._renderTreeSection(entry, btnCfg, false, showSettings);
   }
 
@@ -1848,7 +1848,10 @@ class LutronKeypadsPanel extends HTMLElement {
         const areaId = el.dataset.areaCheck;
         const at = (this._pendingConfig[this._selectedEntryId] || {})[this._selectedButton]?.action_type || "none";
         const entities = this._getEntitiesForAction(at);
-        const areaEnts = entities.filter(ent => (resolveAreaId(ent.entity_id, this._hass) || "_none") === areaId);
+        const areaEnts = entities.filter(ent =>
+          (resolveAreaId(ent.entity_id, this._hass) || "_none") === areaId &&
+          (!this._filterDomain || ent.entity_id.split(".")[0] === this._filterDomain)
+        );
         areaEnts.forEach(ent => this._selectEntity(ent.entity_id, el.checked));
         this._renderMain();
       });
