@@ -1,2718 +1,845 @@
-"""
-Lutron Keypad Controller — custom component for Home Assistant
-==============================================================
-
-Listens for ``lutron_caseta_button_event`` events fired by the built-in
-``lutron_caseta`` integration and routes them to configurable HA actions.
-
-Supported keypads:
-  SeeTouch · Hybrid SeeTouch · Sunnata · Hybrid Sunnata ·
-  Alisee · Palladiom · Tabletop · Pico
-
-Supported action types per button:
-  stateful_scene  — activates an HA scene and tracks it as "active" on the keypad
-                    (other buttons in the same group deactivate); LED feedback optional
-  ha_scene        — plain HA scene, no state tracking
-  automation      — triggers an automation
-  script          — runs a script
-  entity_toggle   — toggles one or more entities (lights, switches, etc.)
-  cover_cycle     — cycles a cover: open → stop → close (repeatable)
-  light_cycle_dim — cycles a light through dim levels: 100 % → 75 % → 50 % → 25 % → off
-  raise           — raises shades OR brightens lights based on the last active action
-  lower           — lowers shades OR dims lights based on the last active action
-  none            — no-op placeholder
-
-Configuration (add to configuration.yaml):
-
-lutron_keypad_controller:
-  keypads:
-    - name: "Living Room Keypad"
-      device_serial: "12345678"          # serial from Lutron, or match by device_name + area_name
-      device_name: "Living Room"         # optional: used to match if serial not unique
-      area_name: "Living Room"           # optional: used to match events
-      keypad_type: sunnata               # one of: seetouch, seetouch_hybrid, sunnata,
-                                         #   sunnata_hybrid, alisee, palladiom, tabletop, pico, generic
-      scene_group: "living_room"         # optional: keypads sharing a group share stateful-scene state
-      buttons:
-        - button_number: 1
-          label: "Movie"
-          action_type: stateful_scene
-          action_target: scene.living_room_movie
-          led_entity: switch.living_room_keypad_led_1  # optional
-        - button_number: 2
-          label: "Bright"
-          action_type: stateful_scene
-          action_target: scene.living_room_bright
-          led_entity: switch.living_room_keypad_led_2
-        - button_number: 3
-          label: "Off"
-          action_type: ha_scene
-          action_target: scene.living_room_off
-        - button_number: 4
-          label: "Shades Up"
-          action_type: raise
-          # no target needed — raise/lower act on the last active scene's covers/lights
-        - button_number: 5
-          label: "Shades Down"
-          action_type: lower
-        - button_number: 6
-          label: "Fan Toggle"
-          action_type: entity_toggle
-          action_target:
-            - fan.living_room_fan
-        - button_number: 7
-          label: "Dim Cycle"
-          action_type: light_cycle_dim
-          action_target:
-            - light.living_room_cans
-          action_params:
-            levels: [100, 75, 50, 25]   # optional: override default dim levels
-        - button_number: 8
-          label: "Curtain Cycle"
-          action_type: cover_cycle
-          action_target:
-            - cover.living_room_curtain
-        - button_number: 9
-          label: "Evening"
-          action_type: automation
-          action_target: automation.living_room_evening
-        - button_number: 10
-          label: "Party Script"
-          action_type: script
-          action_target: script.party_mode
-          action_params:
-            variables:
-              room: living_room
-"""
 from __future__ import annotations
-
-import asyncio
-import logging
+_AA='close_cover'
+_A9='open_cover'
+_A8='entity_id'
+_A7='keypad_type'
+_A6='lutron_type'
+_A5='cover'
+_A4='color_temp_kelvin'
+_A3='debug_leds'
+_A2='area_name'
+_A1='not_found'
+_A0='button'
+_z='\\d+'
+_y='button_names'
+_x='lower_button'
+_w='raise_button'
+_v='configurable_buttons'
+_u='double_tap'
+_t='off_level'
+_s='generic'
+_r='scene_id'
+_q='transition'
+_p='unavailable'
+_o='closed'
+_n='controllers'
+_m='success'
+_l='entry_controllers'
+_k='leap_button_map'
+_j='_v2_blocks'
+_i='hold'
+_h='hs_color'
+_g='up'
+_f='off'
+_e='jti'
+_d='license_key'
+_c='unknown'
+_b='none'
+_a='leap_button_number'
+_Z='button_number'
+_Y='buttons'
+_X='model'
+_W='model_number'
+_V='button_numbers'
+_U='brightness_pct'
+_T='down'
+_S='color_temp'
+_R='switch'
+_Q='.'
+_P='lutron_caseta'
+_O='cycle_dim'
+_N='light.'
+_M='entry_id'
+_L='scene_group'
+_K='name'
+_J='serial'
+_I='entities'
+_H='light'
+_G='brightness'
+_F='id'
+_E='device_id'
+_D='type'
+_C=False
+_B=True
+_A=None
+import asyncio,logging,time
 from pathlib import Path
 from typing import Any
-
-import voluptuous as vol
-import homeassistant.helpers.config_validation as cv
-from homeassistant.components import frontend, websocket_api
-from homeassistant.core import HomeAssistant, Event, CoreState, callback
+import voluptuous as vol,homeassistant.helpers.config_validation as cv
+from homeassistant.components import frontend,websocket_api
+from homeassistant.core import HomeAssistant,Event,CoreState,callback
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
-from homeassistant.helpers import entity_platform, entity_registry as er, device_registry as dr
-from homeassistant.const import (
-    SERVICE_TURN_ON,
-    SERVICE_TURN_OFF,
-    SERVICE_TOGGLE,
-    ATTR_ENTITY_ID,
-)
-
-_COMPONENT_DIR = Path(__file__).parent
-
-from .const import (
-    DOMAIN,
-    LUTRON_EVENT,
-    CONF_BUTTONS,
-    CONF_BUTTON_NUMBER,
-    CONF_BUTTON_LABEL,
-    CONF_ACTION_TYPE,
-    CONF_ACTION_TARGET,
-    CONF_ACTION_PARAMS,
-    CONF_LED_ENTITY,
-    CONF_LED_INVERT,
-    CONF_LED_MODE,
-    CONF_TARGET_BRIGHTNESS,
-    CONF_TARGET_COLOR_TEMP,
-    CONF_ENTITY_SETTINGS,
-    LED_MODE_ROOM,
-    LED_MODE_PATHWAY,
-    LED_MODE_SCENE,
-    CONF_DEVICE_SERIAL,
-    CONF_DEVICE_NAME,
-    CONF_AREA_NAME,
-    CONF_KEYPAD_TYPE,
-    ACTION_STATEFUL_SCENE,
-    ACTION_HA_SCENE,
-    ACTION_AUTOMATION,
-    ACTION_SCRIPT,
-    ACTION_ENTITY_TOGGLE,
-    ACTION_SINGLE_ACTION,
-    ACTION_COVER_CYCLE,
-    ACTION_LIGHT_CYCLE_DIM,
-    ACTION_RAISE,
-    ACTION_LOWER,
-    ACTION_NONE,
-    DIM_CYCLE_LEVELS,
-    COVER_STATE_OPEN,
-    COVER_STATE_STOP,
-    COVER_STATE_CLOSE,
-    RAISE_LOWER_STEP,
-    ATTR_ACTIVE_SCENE,
-    ATTR_LAST_ACTION,
-    ATTR_COVER_STATES,
-    ATTR_LIGHT_DIM_STEPS,
-    get_button_layout,
-    get_button_list,
-    KEYPAD_GENERIC,
-)
-
-_LOGGER = logging.getLogger(__name__)
-
-# ── YAML schema ───────────────────────────────────────────────────────────────
-
-BUTTON_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_BUTTON_NUMBER): cv.positive_int,
-        vol.Optional(CONF_BUTTON_LABEL, default=""): cv.string,
-        vol.Required(CONF_ACTION_TYPE): vol.In(
-            [
-                ACTION_STATEFUL_SCENE,
-                ACTION_HA_SCENE,
-                ACTION_AUTOMATION,
-                ACTION_SCRIPT,
-                ACTION_ENTITY_TOGGLE,
-                ACTION_SINGLE_ACTION,
-                ACTION_COVER_CYCLE,
-                ACTION_LIGHT_CYCLE_DIM,
-                ACTION_RAISE,
-                ACTION_LOWER,
-                ACTION_NONE,
-            ]
-        ),
-        vol.Optional(CONF_ACTION_TARGET): vol.Any(
-            cv.entity_id, [cv.entity_id], cv.string
-        ),
-        vol.Optional(CONF_ACTION_PARAMS, default={}): dict,
-        vol.Optional(CONF_LED_ENTITY): cv.entity_id,
-    }
-)
-
-KEYPAD_SCHEMA = vol.Schema(
-    {
-        vol.Required("name"): cv.string,
-        vol.Optional(CONF_DEVICE_SERIAL, default=""): cv.string,
-        vol.Optional(CONF_DEVICE_NAME, default=""): cv.string,
-        vol.Optional(CONF_AREA_NAME, default=""): cv.string,
-        vol.Optional(CONF_KEYPAD_TYPE, default="generic"): cv.string,
-        vol.Optional("scene_group", default=""): cv.string,
-        vol.Required(CONF_BUTTONS): vol.All(cv.ensure_list, [BUTTON_SCHEMA]),
-    }
-)
-
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required("keypads"): vol.All(cv.ensure_list, [KEYPAD_SCHEMA]),
-            }
-        )
-    },
-    extra=vol.ALLOW_EXTRA,
-)
-
-PLATFORMS: list[str] = ["sensor", "switch", "select", "text"]
-
-
-def _normalize_action_target(target_raw: Any, action_type: str) -> Any:
-    """Normalize a raw action target to the canonical form for the given action type."""
-    if not target_raw:
-        return target_raw
-    if isinstance(target_raw, list):
-        flat = [t.strip() for t in target_raw if str(t).strip()]
-    elif isinstance(target_raw, str) and "," in target_raw:
-        flat = [t.strip() for t in target_raw.split(",") if t.strip()]
-    else:
-        flat = [target_raw] if target_raw else []
-    if not flat:
-        return target_raw
-    if action_type in (ACTION_STATEFUL_SCENE, ACTION_HA_SCENE,
-                       ACTION_AUTOMATION, ACTION_SCRIPT):
-        return flat[0]
-    return flat
-
-
-def _build_buttons_from_options(buttons_options: dict) -> list[dict]:
-    """Convert options {"1": {…}, "2": {…}} to a list suitable for LutronKeypadsController.
-
-    Supports both v1 (flat) and v2 (nested press_on/off_level/double_tap/hold) formats.
-    """
-    result = []
-    for btn_num_str, btn_data in buttons_options.items():
-        try:
-            btn_num = int(btn_num_str)
-        except ValueError:
-            continue
-        if not btn_data.get("enabled", True):
-            continue
-
-        # v2 detection: press_on sub-block present → merge it for field extraction
-        press_on_block = btn_data.get("press_on")
-        effective_data = {**btn_data, **press_on_block} if press_on_block is not None else btn_data
-
-        action_type = effective_data.get(CONF_ACTION_TYPE, ACTION_NONE)
-        if not action_type or action_type == ACTION_NONE:
-            continue
-
-        btn_cfg: dict = {
-            CONF_BUTTON_NUMBER: btn_num,
-            CONF_BUTTON_LABEL:  btn_data.get(CONF_BUTTON_LABEL, ""),
-            CONF_ACTION_TYPE:   action_type,
-        }
-
-        target = _normalize_action_target(effective_data.get(CONF_ACTION_TARGET, ""), action_type)
-        if target:
-            btn_cfg[CONF_ACTION_TARGET] = target
-        if btn_data.get(CONF_LED_ENTITY):
-            btn_cfg[CONF_LED_ENTITY] = btn_data[CONF_LED_ENTITY]
-        if btn_data.get(CONF_LED_INVERT):
-            btn_cfg[CONF_LED_INVERT] = True
-        if effective_data.get("scene_group"):
-            btn_cfg["scene_group"] = effective_data["scene_group"]
-        if btn_data.get(CONF_LED_MODE):
-            btn_cfg[CONF_LED_MODE] = btn_data[CONF_LED_MODE]
-        if effective_data.get(CONF_TARGET_BRIGHTNESS):
-            btn_cfg[CONF_TARGET_BRIGHTNESS] = int(effective_data[CONF_TARGET_BRIGHTNESS])
-        if effective_data.get(CONF_TARGET_COLOR_TEMP):
-            btn_cfg[CONF_TARGET_COLOR_TEMP] = int(effective_data[CONF_TARGET_COLOR_TEMP])
-        if effective_data.get(CONF_ENTITY_SETTINGS):
-            btn_cfg[CONF_ENTITY_SETTINGS] = effective_data[CONF_ENTITY_SETTINGS]
-        if btn_data.get("cycle_dim"):
-            btn_cfg["cycle_dim"] = True
-
-        # Build v2 sub-blocks for double_tap / hold / off_level dispatch.
-        # Supports two formats:
-        #   Fully nested (v2):   press_on key present → sub-blocks also nested.
-        #   Hybrid (frontend v2): press_on fields at top level + sibling off_level/double_tap/hold keys.
-        off_level  = btn_data.get("off_level",  {})
-        double_tap = btn_data.get("double_tap", {})
-        hold       = btn_data.get("hold",       {})
-        if press_on_block is not None or off_level or double_tap or hold:
-            btn_cfg["_v2_blocks"] = {
-                "press_on":   press_on_block or {},
-                "off_level":  off_level,
-                "double_tap": double_tap,
-                "hold":       hold,
-            }
-
-        result.append(btn_cfg)
-    return result
-
-
-# ── Shared scene-group state ───────────────────────────────────────────────────
-# scene_groups[group_name] = button_number of the last activated stateful scene
-_SCENE_GROUPS: dict[str, int | None] = {}
-
-
-# ── LED entity auto-discovery ─────────────────────────────────────────────────
-
+from homeassistant.helpers import entity_platform,entity_registry as er,device_registry as dr
+from homeassistant.helpers.instance_id import async_get as async_get_instance_id
+from homeassistant.loader import async_get_integration
+from.license import LicenseError,check_revocation_online,load_license_cache,periodic_revocation_check,save_license_cache,validate_license_offline
+from homeassistant.const import SERVICE_TURN_ON,SERVICE_TURN_OFF,SERVICE_TOGGLE,ATTR_ENTITY_ID
+_COMPONENT_DIR=Path(__file__).parent
+from.const import DOMAIN,LUTRON_EVENT,CONF_BUTTONS,CONF_BUTTON_NUMBER,CONF_BUTTON_LABEL,CONF_ACTION_TYPE,CONF_ACTION_TARGET,CONF_ACTION_PARAMS,CONF_LED_ENTITY,CONF_LED_INVERT,CONF_LED_MODE,CONF_TARGET_BRIGHTNESS,CONF_TARGET_COLOR_TEMP,CONF_ENTITY_SETTINGS,LED_MODE_ROOM,LED_MODE_PATHWAY,LED_MODE_SCENE,CONF_DEVICE_SERIAL,CONF_DEVICE_NAME,CONF_AREA_NAME,CONF_KEYPAD_TYPE,ACTION_STATEFUL_SCENE,ACTION_HA_SCENE,ACTION_AUTOMATION,ACTION_SCRIPT,ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_COVER_CYCLE,ACTION_LIGHT_CYCLE_DIM,ACTION_RAISE,ACTION_LOWER,ACTION_NONE,DIM_CYCLE_LEVELS,COVER_STATE_OPEN,COVER_STATE_STOP,COVER_STATE_CLOSE,RAISE_LOWER_STEP,ATTR_ACTIVE_SCENE,ATTR_LAST_ACTION,ATTR_COVER_STATES,ATTR_LIGHT_DIM_STEPS,get_button_layout,get_button_list,KEYPAD_GENERIC
+_LOGGER=logging.getLogger(__name__)
+BUTTON_SCHEMA=vol.Schema({vol.Required(CONF_BUTTON_NUMBER):cv.positive_int,vol.Optional(CONF_BUTTON_LABEL,default=''):cv.string,vol.Required(CONF_ACTION_TYPE):vol.In([ACTION_STATEFUL_SCENE,ACTION_HA_SCENE,ACTION_AUTOMATION,ACTION_SCRIPT,ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_COVER_CYCLE,ACTION_LIGHT_CYCLE_DIM,ACTION_RAISE,ACTION_LOWER,ACTION_NONE]),vol.Optional(CONF_ACTION_TARGET):vol.Any(cv.entity_id,[cv.entity_id],cv.string),vol.Optional(CONF_ACTION_PARAMS,default={}):dict,vol.Optional(CONF_LED_ENTITY):cv.entity_id})
+KEYPAD_SCHEMA=vol.Schema({vol.Required(_K):cv.string,vol.Optional(CONF_DEVICE_SERIAL,default=''):cv.string,vol.Optional(CONF_DEVICE_NAME,default=''):cv.string,vol.Optional(CONF_AREA_NAME,default=''):cv.string,vol.Optional(CONF_KEYPAD_TYPE,default=_s):cv.string,vol.Optional(_L,default=''):cv.string,vol.Required(CONF_BUTTONS):vol.All(cv.ensure_list,[BUTTON_SCHEMA])})
+CONFIG_SCHEMA=vol.Schema({DOMAIN:vol.Schema({vol.Required('keypads'):vol.All(cv.ensure_list,[KEYPAD_SCHEMA])})},extra=vol.ALLOW_EXTRA)
+PLATFORMS=['sensor',_R,'select','text']
+def _normalize_action_target(target_raw,action_type):
+	A=target_raw
+	if not A:return A
+	if isinstance(A,list):B=[A.strip()for A in A if str(A).strip()]
+	elif isinstance(A,str)and','in A:B=[A.strip()for A in A.split(',')if A.strip()]
+	else:B=[A]if A else[]
+	if not B:return A
+	if action_type in(ACTION_STATEFUL_SCENE,ACTION_HA_SCENE,ACTION_AUTOMATION,ACTION_SCRIPT):return B[0]
+	return B
+def _build_buttons_from_options(buttons_options):
+	K='press_on';F=[]
+	for(L,A)in buttons_options.items():
+		try:M=int(L)
+		except ValueError:continue
+		if not A.get('enabled',_B):continue
+		D=A.get(K);C={**A,**D}if D is not _A else A;E=C.get(CONF_ACTION_TYPE,ACTION_NONE)
+		if not E or E==ACTION_NONE:continue
+		B={CONF_BUTTON_NUMBER:M,CONF_BUTTON_LABEL:A.get(CONF_BUTTON_LABEL,''),CONF_ACTION_TYPE:E};G=_normalize_action_target(C.get(CONF_ACTION_TARGET,''),E)
+		if G:B[CONF_ACTION_TARGET]=G
+		if A.get(CONF_LED_ENTITY):B[CONF_LED_ENTITY]=A[CONF_LED_ENTITY]
+		if A.get(CONF_LED_INVERT):B[CONF_LED_INVERT]=_B
+		if C.get(_L):B[_L]=C[_L]
+		if A.get(CONF_LED_MODE):B[CONF_LED_MODE]=A[CONF_LED_MODE]
+		if C.get(CONF_TARGET_BRIGHTNESS):B[CONF_TARGET_BRIGHTNESS]=int(C[CONF_TARGET_BRIGHTNESS])
+		if C.get(CONF_TARGET_COLOR_TEMP):B[CONF_TARGET_COLOR_TEMP]=int(C[CONF_TARGET_COLOR_TEMP])
+		if C.get(CONF_ENTITY_SETTINGS):B[CONF_ENTITY_SETTINGS]=C[CONF_ENTITY_SETTINGS]
+		if A.get(_O):B[_O]=_B
+		H=A.get(_t,{});I=A.get(_u,{});J=A.get(_i,{})
+		if D is not _A or H or I or J:B[_j]={K:D or{},_t:H,_u:I,_i:J}
+		F.append(B)
+	return F
+_SCENE_GROUPS={}
 import re as _re
-
-
-def _iter_lutron_bridges(hass: HomeAssistant):
-    """Yield every loaded pylutron-caseta bridge across all config entries."""
-    from homeassistant.config_entries import ConfigEntryState
-    for entry in hass.config_entries.async_entries("lutron_caseta"):
-        if entry.state is not ConfigEntryState.LOADED:
-            continue
-        runtime = getattr(entry, "runtime_data", None)
-        if runtime is not None:
-            bridge = getattr(runtime, "bridge", None)
-            if bridge is not None:
-                yield bridge
-                continue
-        entry_data = hass.data.get("lutron_caseta", {}).get(entry.entry_id)
-        if entry_data is not None:
-            bridge = getattr(entry_data, "bridge", None)
-            if bridge is None and isinstance(entry_data, dict):
-                bridge = entry_data.get("bridge")
-            if bridge is not None:
-                yield bridge
-
-_RAISE_RL_RE = _re.compile(r"\braise\b", _re.IGNORECASE)
-_LOWER_RL_RE = _re.compile(r"\blower\b", _re.IGNORECASE)
-
-
-async def _auto_refresh_button_layout(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Detect and store button layout for entries that were set up before detection worked.
-
-    Runs at startup only when button_numbers is absent from entry.data.
-    Uses bridge.buttons (HomeWorks QSX / RA3) — the authoritative per-button dict.
-    """
-    has_buttons = bool(entry.data.get("button_numbers"))
-    has_model   = "model_number" in entry.data
-
-    if has_buttons and has_model:
-        return  # fully populated
-
-    serial    = str(entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
-    device_id = str(entry.data.get("device_id", "")).strip()
-    area_name = entry.data.get(CONF_AREA_NAME, "")
-    device_name = entry.data.get(CONF_DEVICE_NAME, "")
-    if not serial:
-        return
-
-    from .const import KEYPAD_LAYOUTS, KEYPAD_GENERIC
-    from .config_flow import _infer_keypad_type
-    # Re-infer from the raw Lutron type string — the stored keypad_type may be stale
-    # if the type map was corrected after the entry was first created.
-    lutron_type = entry.data.get("lutron_type", "")
-    ktype = _infer_keypad_type(lutron_type) if lutron_type else entry.data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC)
-    _, has_raise_lower = KEYPAD_LAYOUTS.get(ktype, KEYPAD_LAYOUTS[KEYPAD_GENERIC])
-
-    if has_buttons:
-        # Only need to backfill model_number for existing entries
-        for bridge in _iter_lutron_bridges(hass):
-            try:
-                all_devs: dict = bridge.get_devices()
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.debug("get_devices() failed backfilling model for '%s': %s", entry.title, exc)
-                continue
-            for d in all_devs.values():
-                if (serial    and str(d.get("serial",    "")) == serial) \
-                or (device_id and str(d.get("device_id", "")) == device_id):
-                    model_number = d.get("model", "") or ""
-                    hass.config_entries.async_update_entry(
-                        entry, data={**entry.data, "model_number": model_number}
-                    )
-                    _LOGGER.debug("Backfilled model_number=%r for '%s'", model_number, entry.title)
-                    return
-        _LOGGER.debug("Could not backfill model_number for '%s' (serial=%s)", entry.title, serial)
-        return
-
-    def _strip_eng(full_name: str, area: str, dev: str) -> str:
-        name = full_name.strip()
-        for prefix in [f"{area} {dev}", dev, area]:
-            prefix = prefix.strip()
-            if prefix and name.lower().startswith(prefix.lower()):
-                name = name[len(prefix):].strip()
-                break
-        return name.title() if name else full_name.strip()
-
-    for bridge in _iter_lutron_bridges(hass):
-        all_btns: dict = getattr(bridge, "buttons", None) or {}
-        if not all_btns:
-            continue
-
-        candidates = [
-            b for b in all_btns.values()
-            if (serial    and str(b.get("serial", ""))         == serial)
-            or (device_id and str(b.get("parent_device", "")) == device_id)
-        ]
-        if not candidates:
-            continue
-
-        btn_nums: list[int] = []
-        raise_btn: int | None = None
-        lower_btn: int | None = None
-        btn_names: dict[str, str] = {}
-        no_led_buttons: list[int] = []
-
-        for btn in candidates:
-            bnum_raw = btn.get("button_number")
-            if bnum_raw is None:
-                continue
-            try:
-                bnum = int(bnum_raw)
-            except (TypeError, ValueError):
-                continue
-
-            raw     = btn.get("button_name") or btn.get("name", "")
-            lc      = raw.lower()
-            has_led = btn.get("button_led") is not None
-
-            if has_raise_lower:
-                # Name-based detection is authoritative
-                if lc.endswith((" raise", "-raise", " up", "-up")) or _RAISE_RL_RE.search(raw):
-                    raise_btn = bnum
-                elif lc.endswith((" lower", "-lower", " down", "-down")) or _LOWER_RL_RE.search(raw):
-                    lower_btn = bnum
-                elif not has_led:
-                    # No LED = no scene indicator = raise/lower physical button
-                    no_led_buttons.append(bnum)
-
-            btn_nums.append(bnum)
-            eng = _strip_eng(raw, area_name, device_name)
-            if eng:
-                btn_names[str(bnum)] = eng
-
-        if has_raise_lower:
-            # Assign raise/lower from no-LED buttons (Lutron: odd=raise, even=lower)
-            for n in sorted(no_led_buttons):
-                if n % 2 == 1 and raise_btn is None:
-                    raise_btn = n
-                elif n % 2 == 0 and lower_btn is None:
-                    lower_btn = n
-            # Sequential fallback when all no-LED buttons share the same parity
-            for n in sorted(no_led_buttons):
-                if raise_btn is None and n != lower_btn:
-                    raise_btn = n
-                elif lower_btn is None and n != raise_btn:
-                    lower_btn = n
-
-        btn_nums   = sorted(set(btn_nums))
-        configurable = [n for n in btn_nums if n not in (raise_btn, lower_btn)]
-
-        model_number = ""
-        try:
-            all_devs: dict = bridge.get_devices()
-            for d in all_devs.values():
-                if (serial    and str(d.get("serial",    "")) == serial) \
-                or (device_id and str(d.get("device_id", "")) == device_id):
-                    model_number = d.get("model", "") or ""
-                    break
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("get_devices() failed fetching model for '%s': %s", entry.title, exc)
-
-        layout = {
-            "button_numbers":       btn_nums,
-            "configurable_buttons": configurable,
-            "raise_button":         raise_btn,
-            "lower_button":         lower_btn,
-            "button_names":         btn_names,
-            "leap_button_map":      {},
-            CONF_KEYPAD_TYPE:       ktype,  # persist corrected type
-            "model_number":         model_number,
-        }
-        _LOGGER.info(
-            "Auto-detected layout for '%s' (serial=%s): %d buttons, "
-            "configurable=%s raise=%s lower=%s",
-            entry.title, serial, len(btn_nums), configurable, raise_btn, lower_btn,
-        )
-        hass.config_entries.async_update_entry(entry, data={**entry.data, **layout})
-        return
-
-    _LOGGER.warning(
-        "Could not auto-detect button layout for '%s' (serial=%s) — "
-        "bridge not found or carries no button data.",
-        entry.title, serial,
-    )
-
-
-async def _find_led_entities(
-    hass: HomeAssistant, config_entry: ConfigEntry
-) -> dict[int, str]:
-    """Scan the entity registry for lutron_caseta LED switch entities.
-
-    Returns {button_number: entity_id}.  Manual led_entity config always
-    overrides this map; the map is only used as an auto-discovery fallback.
-    """
-    serial    = str(config_entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
-    device_id = str(config_entry.data.get("device_id", "")).strip()
-
-    _LOGGER.debug(
-        "LED discovery starting for '%s' — serial=%s device_id=%s",
-        config_entry.title, serial, device_id,
-    )
-
-    dev_reg = dr.async_get(hass)
-    ent_reg = er.async_get(hass)
-
-    _LOGGER.debug("LED discovery: %d devices in registry", len(dev_reg.devices))
-
-    # Find the lutron_caseta HA device that matches our keypad
-    lutron_device = None
-    for device in dev_reg.devices.values():
-        for ident_domain, identifier, *_ in device.identifiers:
-            if ident_domain != "lutron_caseta":
-                continue
-            id_str = str(identifier).strip()
-            if (serial and id_str == serial) or (device_id and id_str == device_id):
-                lutron_device = device
-                break
-        if lutron_device:
-            break
-
-    if lutron_device is None:
-        _LOGGER.warning(
-            "LED discovery: no lutron_caseta device matched serial=%s device_id=%s. "
-            "Dumping all device identifiers:",
-            serial, device_id,
-        )
-        for device in dev_reg.devices.values():
-            _LOGGER.warning(
-                "  Device '%s': identifiers=%s",
-                device.name, list(device.identifiers),
-            )
-        return {}
-
-    all_entries = er.async_entries_for_device(ent_reg, lutron_device.id)
-    _LOGGER.debug(
-        "LED discovery: found lutron device '%s' (id=%s) with %d entities: %s",
-        lutron_device.name, lutron_device.id, len(all_entries),
-        [(e.entity_id, e.domain, e.unique_id) for e in all_entries],
-    )
-
-    led_map: dict[int, str] = {}
-    for entry in all_entries:
-        if entry.domain != "switch":
-            continue
-        haystack = " ".join(filter(None, [
-            entry.name, entry.original_name, entry.unique_id
-        ])).lower()
-        _LOGGER.debug(
-            "LED discovery: switch entity %s — haystack='%s'",
-            entry.entity_id, haystack,
-        )
-        if "led" not in haystack:
-            continue
-        match = _re.search(r"button[_\s]+(\d+)[_\s]+led", haystack)
-        if match:
-            btn_num = int(match.group(1))
-            led_map[btn_num] = entry.entity_id
-            _LOGGER.debug(
-                "LED discovery: button %d → %s", btn_num, entry.entity_id
-            )
-        else:
-            _LOGGER.warning(
-                "LED discovery: '%s' contains 'led' but button number "
-                "regex did not match — haystack='%s'",
-                entry.entity_id, haystack,
-            )
-
-    if led_map:
-        _LOGGER.info(
-            "LED discovery for '%s': %s", config_entry.title, led_map,
-        )
-    else:
-        _LOGGER.warning(
-            "LED discovery for '%s': no LED entities mapped "
-            "(keypad_type=%s). "
-            "If your keypad has LEDs, configure led_entity manually in "
-            "the options flow, or check the debug_leds service output.",
-            config_entry.title,
-            config_entry.data.get("keypad_type"),
-        )
-    return led_map
-
-
-# ── LED auto-discovery via button entity naming convention ────────────────────
-
-def _extract_button_number(btn_entry: Any, hass: HomeAssistant) -> int | None:
-    """Extract the leap_button_number from a lutron_caseta button entity.
-
-    lutron_caseta unique_id format is typically "<serial>_<leap_button_number>",
-    e.g. "20603964_2" → 2.  Several fallback strategies are tried.
-    """
-    unique_id = btn_entry.unique_id or ""
-    entity_id = btn_entry.entity_id or ""
-
-    # Strategy 1: unique_id ends with _<number>  (most common: serial_leapbtn)
-    m = _re.search(r"_(\d+)$", unique_id)
-    if m:
-        return int(m.group(1))
-
-    # Strategy 2: unique_id contains "button_<number>"
-    m = _re.search(r"button[_\s](\d+)", unique_id.lower())
-    if m:
-        return int(m.group(1))
-
-    # Strategy 3: entity state attributes
-    state = hass.states.get(entity_id)
-    if state:
-        for key in ("button_number", "leap_button_number", "button_index"):
-            val = state.attributes.get(key)
-            if val is not None:
-                try:
-                    return int(val)
-                except (ValueError, TypeError):
-                    pass
-
-    # Strategy 4: last number anywhere in unique_id
-    nums = _re.findall(r"\d+", unique_id)
-    if nums:
-        return int(nums[-1])
-
-    return None
-
-
-def _extract_btn_num_from_led_uid(uid: str, serial: str = "") -> int | None:
-    """Extract the leap_button_number from a LED switch entity's unique_id.
-
-    Handles formats:
-      <serial>_<num>        e.g. "20603964_2"
-      <serial>_<num>_led    e.g. "20603964_2_led"
-      <serial>_led_<num>    e.g. "20603964_led_2"
-    """
-    if not uid:
-        return None
-    working = uid
-    # Strip serial prefix
-    if serial and working.startswith(serial + "_"):
-        working = working[len(serial) + 1:]
-    # Strip _led / led_ markers to isolate the number
-    working = _re.sub(r"(?:^led[_-]|[_-]led$)", "", working).strip("_-")
-    # Now working should be just the leap_button_number (or close to it)
-    m = _re.fullmatch(r"\d+", working)
-    if m:
-        return int(m.group(0))
-    # Last resort: last numeric run
-    nums = _re.findall(r"\d+", working)
-    if nums:
-        return int(nums[-1])
-    return None
-
-
-def _find_lutron_device(hass: HomeAssistant, config_entry: ConfigEntry) -> Any:
-    """Locate the HA device-registry entry for our keypad.
-
-    Tries serial match first, then device_name substring match.
-    Returns None if not found (with a warning log).
-    """
-    serial      = str(config_entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
-    device_name = config_entry.data.get(CONF_DEVICE_NAME, "").strip().lower()
-
-    dev_reg = dr.async_get(hass)
-
-    # ── Match by Lutron serial (most reliable) ──────────────────────────────
-    for device in dev_reg.devices.values():
-        for ident_tuple in device.identifiers:
-            if (len(ident_tuple) >= 2
-                    and ident_tuple[0] == "lutron_caseta"
-                    and str(ident_tuple[1]).strip() == serial):
-                return device
-
-    # ── Fallback: device name substring match ───────────────────────────────
-    if device_name:
-        for device in dev_reg.devices.values():
-            if (device.name
-                    and device_name in device.name.lower()
-                    and any(t[0] == "lutron_caseta" for t in device.identifiers)):
-                _LOGGER.debug(
-                    "LED: serial '%s' not matched; found device '%s' by name",
-                    serial, device.name,
-                )
-                return device
-
-    lutron_devices = [
-        (d.name, list(d.identifiers))
-        for d in dev_reg.devices.values()
-        if any(t[0] == "lutron_caseta" for t in d.identifiers)
-    ]
-    _LOGGER.warning(
-        "LED discovery: no lutron_caseta device matched serial='%s' "
-        "device_name='%s'. Available lutron_caseta devices: %s",
-        serial, device_name, lutron_devices,
-    )
-    return None
-
-
-async def _find_led_entities_by_button_entities(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-) -> dict[int, str]:
-    """Find LED switches using multiple strategies against the device registry.
-
-    Strategy A — name-based: button.<base> → switch.<base>_led
-    Strategy B — shared unique_id: LED uid == button uid (or button uid + "_led")
-    Strategy C — direct uid extraction: parse leap_button_number from LED uid
-
-    The first strategy that yields any results is returned.
-    """
-    serial  = str(config_entry.data.get(CONF_DEVICE_SERIAL, "")).strip()
-    ent_reg = er.async_get(hass)
-
-    lutron_device = _find_lutron_device(hass, config_entry)
-    if lutron_device is None:
-        return {}
-
-    all_entries = er.async_entries_for_device(ent_reg, lutron_device.id)
-
-    # Collect button and LED switch entities (no platform filter — it can vary by HA version)
-    button_entries = [e for e in all_entries if e.domain == "button"]
-    led_entries    = [
-        e for e in all_entries
-        if e.domain == "switch" and e.entity_id.endswith("_led")
-    ]
-
-    _LOGGER.debug(
-        "LED discovery for '%s': device '%s' has %d button entities, "
-        "%d LED switch entities",
-        config_entry.title, lutron_device.name,
-        len(button_entries), len(led_entries),
-    )
-
-    if not led_entries:
-        _LOGGER.debug(
-            "LED discovery: no switch.*_led entities on device '%s'",
-            lutron_device.name,
-        )
-        return {}
-
-    led_entity_ids = {e.entity_id for e in led_entries}
-    led_map: dict[int, str] = {}
-
-    # ── Strategy A: button.xxx → switch.xxx_led ─────────────────────────────
-    for btn_e in button_entries:
-        base         = btn_e.entity_id[len("button."):]
-        expected_led = f"switch.{base}_led"
-        if expected_led not in led_entity_ids:
-            continue
-        btn_num = _extract_button_number(btn_e, hass)
-        if btn_num is not None:
-            led_map[btn_num] = expected_led
-            _LOGGER.debug("LED (A): button %d → '%s'", btn_num, expected_led)
-
-    if led_map:
-        _LOGGER.info(
-            "LED discovery for '%s' (strategy A): %s",
-            config_entry.title, led_map,
-        )
-        return led_map
-
-    # ── Strategy B: match by shared/related unique_id ───────────────────────
-    btn_by_uid: dict[str, Any] = {e.unique_id: e for e in button_entries if e.unique_id}
-    for led_e in led_entries:
-        if not led_e.unique_id:
-            continue
-        # Try exact uid match first
-        btn_e = btn_by_uid.get(led_e.unique_id)
-        if btn_e is None:
-            # Try led uid with _led suffix stripped
-            base_uid = _re.sub(r"[_-]?led$", "", led_e.unique_id).rstrip("_-")
-            btn_e = btn_by_uid.get(base_uid)
-        if btn_e:
-            btn_num = _extract_button_number(btn_e, hass)
-            if btn_num is not None:
-                led_map[btn_num] = led_e.entity_id
-                _LOGGER.debug("LED (B): button %d → '%s'", btn_num, led_e.entity_id)
-
-    if led_map:
-        _LOGGER.info(
-            "LED discovery for '%s' (strategy B): %s",
-            config_entry.title, led_map,
-        )
-        return led_map
-
-    # ── Strategy C: extract button number directly from LED entity unique_id ─
-    for led_e in led_entries:
-        btn_num = _extract_btn_num_from_led_uid(led_e.unique_id or "", serial)
-        if btn_num is not None:
-            led_map[btn_num] = led_e.entity_id
-            _LOGGER.debug("LED (C): button %d → '%s'", btn_num, led_e.entity_id)
-
-    if led_map:
-        _LOGGER.info(
-            "LED discovery for '%s' (strategy C): %s",
-            config_entry.title, led_map,
-        )
-        return led_map
-
-    _LOGGER.warning(
-        "LED discovery for '%s': all strategies failed. "
-        "button entities=%s  LED entities=%s  "
-        "Configure led_entity manually in options or run debug_leds service.",
-        config_entry.title,
-        [e.entity_id for e in button_entries],
-        [e.entity_id for e in led_entries],
-    )
-    return led_map
-
-
-# ── Diagnostic service ────────────────────────────────────────────────────────
-
-async def _async_debug_leds(hass: HomeAssistant, call) -> None:
-    """Service: lutron_keypad_controller.debug_leds
-
-    Call from Developer Tools → Actions. Output appears in
-    Settings → System → Logs (search "LED DEBUG REPORT").
-    Also fires a lutron_keypad_controller_debug event.
-    """
-    lines: list[str] = []
-
-    entry_controllers: dict = (
-        hass.data.get(DOMAIN, {}).get("entry_controllers", {})
-    )
-    if not entry_controllers:
-        lines.append("No entry controllers found in hass.data — "
-                     "is the integration loaded?")
-
-    for entry_id, ctrl in entry_controllers.items():
-        lines.append(f"\n{'='*60}")
-        lines.append(f"Keypad : {ctrl.name}")
-        lines.append(f"Serial : {ctrl.serial}")
-        lines.append(f"device_id: {ctrl.device_id}")
-        lines.append(f"LED map (auto-discovered): {ctrl._led_map}")
-        lines.append(
-            f"Button switches registered: "
-            f"{list(ctrl._button_switches.keys())}"
-        )
-
-        for btn_num, btn_cfg in ctrl._buttons.items():
-            atype      = btn_cfg.get(CONF_ACTION_TYPE, "none")
-            manual_led = btn_cfg.get(CONF_LED_ENTITY, "")
-            auto_led   = ctrl._led_map.get(btn_num, "")
-            resolved   = manual_led or auto_led
-            lines.append(f"\n  Button {btn_num}  action={atype}")
-            lines.append(f"    manual led_entity : '{manual_led}'")
-            lines.append(f"    auto-discovered   : '{auto_led}'")
-            lines.append(f"    resolved LED      : '{resolved}'")
-            if resolved:
-                state = hass.states.get(resolved)
-                lines.append(
-                    f"    LED entity state  : "
-                    f"{state.state if state else '⚠ ENTITY NOT FOUND'}"
-                )
-            else:
-                lines.append("    ⚠ NO LED ENTITY — "
-                             "auto-discovery failed and no manual led_entity set")
-            sw = ctrl._button_switches.get(btn_num)
-            lines.append(
-                f"    HA switch state   : "
-                f"{'ON' if sw and sw.is_on else 'OFF'}"
-                f"{'' if sw else '  ⚠ switch entity not registered'}"
-            )
-
-    lines.append(f"\n{'='*60}")
-    lines.append("All switch entities with 'led' in entity_id:")
-    for state in hass.states.async_all("switch"):
-        if "led" in state.entity_id.lower():
-            lines.append(f"  {state.entity_id}: {state.state}")
-
-    lines.append("\nDevice registry — devices with 'lutron' identifiers:")
-    dev_reg = dr.async_get(hass)
-    for device in dev_reg.devices.values():
-        if any("lutron" in str(i).lower() for i in device.identifiers):
-            lines.append(f"  '{device.name}'  identifiers={list(device.identifiers)}")
-
-    lines.append("\nEntity registry — lutron_caseta switch entities:")
-    ent_reg = er.async_get(hass)
-    for entry in ent_reg.entities.values():
-        if entry.domain == "switch" and entry.platform == "lutron_caseta":
-            lines.append(
-                f"  {entry.entity_id}"
-                f"  unique_id={entry.unique_id}"
-                f"  device_id={entry.device_id}"
-            )
-
-    report = "\n".join(lines)
-    _LOGGER.warning("LED DEBUG REPORT:\n%s", report)
-    hass.bus.async_fire("lutron_keypad_controller_debug", {"report": report})
-
-
-# ── WebSocket API ─────────────────────────────────────────────────────────────
-
-@websocket_api.websocket_command({
-    vol.Required("type"): f"{DOMAIN}/get_entries",
-})
+def _iter_lutron_bridges(hass):
+	D='bridge';from homeassistant.config_entries import ConfigEntryState as F
+	for C in hass.config_entries.async_entries(_P):
+		if C.state is not F.LOADED:continue
+		E=getattr(C,'runtime_data',_A)
+		if E is not _A:
+			A=getattr(E,D,_A)
+			if A is not _A:yield A;continue
+		B=hass.data.get(_P,{}).get(C.entry_id)
+		if B is not _A:
+			A=getattr(B,D,_A)
+			if A is _A and isinstance(B,dict):A=B.get(D)
+			if A is not _A:yield A
+_RAISE_RL_RE=_re.compile('\\braise\\b',_re.IGNORECASE)
+_LOWER_RL_RE=_re.compile('\\blower\\b',_re.IGNORECASE)
+async def _auto_refresh_button_layout(hass,entry):
+	K=hass;A=entry;R=bool(A.data.get(_V));e=_W in A.data
+	if R and e:return
+	B=str(A.data.get(CONF_DEVICE_SERIAL,'')).strip();G=str(A.data.get(_E,'')).strip();f=A.data.get(CONF_AREA_NAME,'');g=A.data.get(CONF_DEVICE_NAME,'')
+	if not B:return
+	from.const import KEYPAD_LAYOUTS as S,KEYPAD_GENERIC as T;from.config_flow import _infer_keypad_type as h;U=A.data.get(_A6,'');V=h(U)if U else A.data.get(CONF_KEYPAD_TYPE,T);l,W=S.get(V,S[T])
+	if R:
+		for L in _iter_lutron_bridges(K):
+			try:O=L.get_devices()
+			except Exception as P:_LOGGER.debug("get_devices() failed backfilling model for '%s': %s",A.title,P);continue
+			for F in O.values():
+				if B and str(F.get(_J,''))==B or G and str(F.get(_E,''))==G:I=F.get(_X,'')or'';K.config_entries.async_update_entry(A,data={**A.data,_W:I});_LOGGER.debug("Backfilled model_number=%r for '%s'",I,A.title);return
+		_LOGGER.debug("Could not backfill model_number for '%s' (serial=%s)",A.title,B);return
+	def i(full_name,area,dev):
+		C=full_name;A=C.strip()
+		for B in[f"{area} {dev}",dev,area]:
+			B=B.strip()
+			if B and A.lower().startswith(B.lower()):A=A[len(B):].strip();break
+		return A.title()if A else C.strip()
+	for L in _iter_lutron_bridges(K):
+		X=getattr(L,_Y,_A)or{}
+		if not X:continue
+		Y=[A for A in X.values()if B and str(A.get(_J,''))==B or G and str(A.get('parent_device',''))==G]
+		if not Y:continue
+		H=[];C=_A;D=_A;Z={};Q=[]
+		for M in Y:
+			a=M.get(_Z)
+			if a is _A:continue
+			try:J=int(a)
+			except(TypeError,ValueError):continue
+			N=M.get('button_name')or M.get(_K,'');b=N.lower();j=M.get('button_led')is not _A
+			if W:
+				if b.endswith((' raise','-raise',' up','-up'))or _RAISE_RL_RE.search(N):C=J
+				elif b.endswith((' lower','-lower',' down','-down'))or _LOWER_RL_RE.search(N):D=J
+				elif not j:Q.append(J)
+			H.append(J);c=i(N,f,g)
+			if c:Z[str(J)]=c
+		if W:
+			for E in sorted(Q):
+				if E%2==1 and C is _A:C=E
+				elif E%2==0 and D is _A:D=E
+			for E in sorted(Q):
+				if C is _A and E!=D:C=E
+				elif D is _A and E!=C:D=E
+		H=sorted(set(H));d=[A for A in H if A not in(C,D)];I=''
+		try:
+			O=L.get_devices()
+			for F in O.values():
+				if B and str(F.get(_J,''))==B or G and str(F.get(_E,''))==G:I=F.get(_X,'')or'';break
+		except Exception as P:_LOGGER.debug("get_devices() failed fetching model for '%s': %s",A.title,P)
+		k={_V:H,_v:d,_w:C,_x:D,_y:Z,_k:{},CONF_KEYPAD_TYPE:V,_W:I};_LOGGER.info("Auto-detected layout for '%s' (serial=%s): %d buttons, configurable=%s raise=%s lower=%s",A.title,B,len(H),d,C,D);K.config_entries.async_update_entry(A,data={**A.data,**k});return
+	_LOGGER.warning("Could not auto-detect button layout for '%s' (serial=%s) — bridge not found or carries no button data.",A.title,B)
+async def _find_led_entities(hass,config_entry):
+	B=config_entry;E=str(B.data.get(CONF_DEVICE_SERIAL,'')).strip();F=str(B.data.get(_E,'')).strip();_LOGGER.debug("LED discovery starting for '%s' — serial=%s device_id=%s",B.title,E,F);I=dr.async_get(hass);N=er.async_get(hass);_LOGGER.debug('LED discovery: %d devices in registry',len(I.devices));C=_A
+	for D in I.devices.values():
+		for(O,P,*Q)in D.identifiers:
+			if O!=_P:continue
+			K=str(P).strip()
+			if E and K==E or F and K==F:C=D;break
+		if C:break
+	if C is _A:
+		_LOGGER.warning('LED discovery: no lutron_caseta device matched serial=%s device_id=%s. Dumping all device identifiers:',E,F)
+		for D in I.devices.values():_LOGGER.warning("  Device '%s': identifiers=%s",D.name,list(D.identifiers))
+		return{}
+	J=er.async_entries_for_device(N,C.id);_LOGGER.debug("LED discovery: found lutron device '%s' (id=%s) with %d entities: %s",C.name,C.id,len(J),[(A.entity_id,A.domain,A.unique_id)for A in J]);G={}
+	for A in J:
+		if A.domain!=_R:continue
+		H=' '.join(filter(_A,[A.name,A.original_name,A.unique_id])).lower();_LOGGER.debug("LED discovery: switch entity %s — haystack='%s'",A.entity_id,H)
+		if'led'not in H:continue
+		L=_re.search('button[_\\s]+(\\d+)[_\\s]+led',H)
+		if L:M=int(L.group(1));G[M]=A.entity_id;_LOGGER.debug('LED discovery: button %d → %s',M,A.entity_id)
+		else:_LOGGER.warning("LED discovery: '%s' contains 'led' but button number regex did not match — haystack='%s'",A.entity_id,H)
+	if G:_LOGGER.info("LED discovery for '%s': %s",B.title,G)
+	else:_LOGGER.warning("LED discovery for '%s': no LED entities mapped (keypad_type=%s). If your keypad has LEDs, configure led_entity manually in the options flow, or check the debug_leds service output.",B.title,B.data.get(_A7))
+	return G
+def _extract_button_number(btn_entry,hass):
+	C=btn_entry;B=C.unique_id or'';G=C.entity_id or'';A=_re.search('_(\\d+)$',B)
+	if A:return int(A.group(1))
+	A=_re.search('button[_\\s](\\d+)',B.lower())
+	if A:return int(A.group(1))
+	D=hass.states.get(G)
+	if D:
+		for H in(_Z,_a,'button_index'):
+			E=D.attributes.get(H)
+			if E is not _A:
+				try:return int(E)
+				except(ValueError,TypeError):pass
+	F=_re.findall(_z,B)
+	if F:return int(F[-1])
+def _extract_btn_num_from_led_uid(uid,serial=''):
+	B=serial
+	if not uid:return
+	A=uid
+	if B and A.startswith(B+'_'):A=A[len(B)+1:]
+	A=_re.sub('(?:^led[_-]|[_-]led$)','',A).strip('_-');C=_re.fullmatch(_z,A)
+	if C:return int(C.group(0))
+	D=_re.findall(_z,A)
+	if D:return int(D[-1])
+def _find_lutron_device(hass,config_entry):
+	F=config_entry;B=str(F.data.get(CONF_DEVICE_SERIAL,'')).strip();C=F.data.get(CONF_DEVICE_NAME,'').strip().lower();D=dr.async_get(hass)
+	for A in D.devices.values():
+		for E in A.identifiers:
+			if len(E)>=2 and E[0]==_P and str(E[1]).strip()==B:return A
+	if C:
+		for A in D.devices.values():
+			if A.name and C in A.name.lower()and any(A[0]==_P for A in A.identifiers):_LOGGER.debug("LED: serial '%s' not matched; found device '%s' by name",B,A.name);return A
+	G=[(A.name,list(A.identifiers))for A in D.devices.values()if any(A[0]==_P for A in A.identifiers)];_LOGGER.warning("LED discovery: no lutron_caseta device matched serial='%s' device_name='%s'. Available lutron_caseta devices: %s",B,C,G)
+async def _find_led_entities_by_button_entities(hass,config_entry):
+	G=hass;D=config_entry;M=str(D.data.get(CONF_DEVICE_SERIAL,'')).strip();N=er.async_get(G);H=_find_lutron_device(G,D)
+	if H is _A:return{}
+	K=er.async_entries_for_device(N,H.id);I=[A for A in K if A.domain==_A0];F=[A for A in K if A.domain==_R and A.entity_id.endswith('_led')];_LOGGER.debug("LED discovery for '%s': device '%s' has %d button entities, %d LED switch entities",D.title,H.name,len(I),len(F))
+	if not F:_LOGGER.debug("LED discovery: no switch.*_led entities on device '%s'",H.name);return{}
+	O={A.entity_id for A in F};A={}
+	for E in I:
+		P=E.entity_id[len('button.'):];J=f"switch.{P}_led"
+		if J not in O:continue
+		B=_extract_button_number(E,G)
+		if B is not _A:A[B]=J;_LOGGER.debug("LED (A): button %d → '%s'",B,J)
+	if A:_LOGGER.info("LED discovery for '%s' (strategy A): %s",D.title,A);return A
+	L={A.unique_id:A for A in I if A.unique_id}
+	for C in F:
+		if not C.unique_id:continue
+		E=L.get(C.unique_id)
+		if E is _A:Q=_re.sub('[_-]?led$','',C.unique_id).rstrip('_-');E=L.get(Q)
+		if E:
+			B=_extract_button_number(E,G)
+			if B is not _A:A[B]=C.entity_id;_LOGGER.debug("LED (B): button %d → '%s'",B,C.entity_id)
+	if A:_LOGGER.info("LED discovery for '%s' (strategy B): %s",D.title,A);return A
+	for C in F:
+		B=_extract_btn_num_from_led_uid(C.unique_id or'',M)
+		if B is not _A:A[B]=C.entity_id;_LOGGER.debug("LED (C): button %d → '%s'",B,C.entity_id)
+	if A:_LOGGER.info("LED discovery for '%s' (strategy C): %s",D.title,A);return A
+	_LOGGER.warning("LED discovery for '%s': all strategies failed. button entities=%s  LED entities=%s  Configure led_entity manually in options or run debug_leds service.",D.title,[A.entity_id for A in I],[A.entity_id for A in F]);return A
+async def _async_debug_leds(hass,call):
+	C=hass;A=[];J=C.data.get(DOMAIN,{}).get(_l,{})
+	if not J:A.append('No entry controllers found in hass.data — is the integration loaded?')
+	for(R,B)in J.items():
+		A.append(f"\n{"="*60}");A.append(f"Keypad : {B.name}");A.append(f"Serial : {B.serial}");A.append(f"device_id: {B.device_id}");A.append(f"LED map (auto-discovered): {B._led_map}");A.append(f"Button switches registered: {list(B._button_switches.keys())}")
+		for(F,K)in B._buttons.items():
+			O=K.get(CONF_ACTION_TYPE,_b);L=K.get(CONF_LED_ENTITY,'');M=B._led_map.get(F,'');G=L or M;A.append(f"\n  Button {F}  action={O}");A.append(f"    manual led_entity : '{L}'");A.append(f"    auto-discovered   : '{M}'");A.append(f"    resolved LED      : '{G}'")
+			if G:D=C.states.get(G);A.append(f"    LED entity state  : {D.state if D else"⚠ ENTITY NOT FOUND"}")
+			else:A.append('    ⚠ NO LED ENTITY — auto-discovery failed and no manual led_entity set')
+			H=B._button_switches.get(F);A.append(f"    HA switch state   : {"ON"if H and H.is_on else"OFF"}{""if H else"  ⚠ switch entity not registered"}")
+	A.append(f"\n{"="*60}");A.append("All switch entities with 'led' in entity_id:")
+	for D in C.states.async_all(_R):
+		if'led'in D.entity_id.lower():A.append(f"  {D.entity_id}: {D.state}")
+	A.append("\nDevice registry — devices with 'lutron' identifiers:");P=dr.async_get(C)
+	for I in P.devices.values():
+		if any('lutron'in str(A).lower()for A in I.identifiers):A.append(f"  '{I.name}'  identifiers={list(I.identifiers)}")
+	A.append('\nEntity registry — lutron_caseta switch entities:');Q=er.async_get(C)
+	for E in Q.entities.values():
+		if E.domain==_R and E.platform==_P:A.append(f"  {E.entity_id}  unique_id={E.unique_id}  device_id={E.device_id}")
+	N='\n'.join(A);_LOGGER.warning('LED DEBUG REPORT:\n%s',N);C.bus.async_fire('lutron_keypad_controller_debug',{'report':N})
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/get_entries"})
 @websocket_api.async_response
-async def _ws_get_entries(hass: HomeAssistant, connection, msg: dict) -> None:
-    """Return all config entries for this domain with their data and options."""
-    entries = []
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        entries.append({
-            "entry_id": entry.entry_id,
-            "title":    entry.title,
-            "data":     dict(entry.data),
-            "options":  dict(entry.options),
-            "state":    entry.state.value,
-        })
-    connection.send_result(msg["id"], entries)
-
-
-@websocket_api.websocket_command({
-    vol.Required("type"):     f"{DOMAIN}/save_keypad_config",
-    vol.Required("entry_id"): str,
-    vol.Required("buttons"):  dict,
-})
+async def _ws_get_entries(hass,connection,msg):
+	B=[]
+	for A in hass.config_entries.async_entries(DOMAIN):B.append({_M:A.entry_id,'title':A.title,'data':dict(A.data),'options':dict(A.options),'state':A.state.value})
+	connection.send_result(msg[_F],B)
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/save_keypad_config",vol.Required(_M):str,vol.Required(_Y):dict})
 @websocket_api.async_response
-async def _ws_save_keypad_config(hass: HomeAssistant, connection, msg: dict) -> None:
-    """Save button configuration for a keypad from the programming panel."""
-    entry_id = msg["entry_id"]
-    buttons  = msg["buttons"]
-
-    entry = hass.config_entries.async_get_entry(entry_id)
-    if entry is None or entry.domain != DOMAIN:
-        connection.send_error(msg["id"], "not_found", f"Entry '{entry_id}' not found")
-        return
-
-    hass.config_entries.async_update_entry(entry, options={"buttons": buttons})
-    hass.async_create_task(hass.config_entries.async_reload(entry_id))
-    connection.send_result(msg["id"], {"success": True})
-
-
-@websocket_api.websocket_command({
-    vol.Required("type"): f"{DOMAIN}/discover_keypads",
-})
+async def _ws_save_keypad_config(hass,connection,msg):
+	E=connection;B=msg;A=hass;D=B[_M];F=B[_Y];C=A.config_entries.async_get_entry(D)
+	if C is _A or C.domain!=DOMAIN:E.send_error(B[_F],_A1,f"Entry '{D}' not found");return
+	A.config_entries.async_update_entry(C,options={**C.options,_Y:F});A.async_create_task(A.config_entries.async_reload(D));E.send_result(B[_F],{_m:_B})
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/discover_keypads"})
 @websocket_api.async_response
-async def _ws_discover_keypads(hass: HomeAssistant, connection, msg: dict) -> None:
-    """Return Lutron devices not yet configured as keypads."""
-    from .config_flow import _infer_keypad_type, LUTRON_TYPE_MAP
-
-    already = {
-        str(e.data.get(CONF_DEVICE_SERIAL, ""))
-        for e in hass.config_entries.async_entries(DOMAIN)
-    }
-    devices: list[dict] = []
-    for bridge in _iter_lutron_bridges(hass):
-        try:
-            all_devs: dict = bridge.get_devices()
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("get_devices() failed during discovery: %s", exc)
-            continue
-        for d in all_devs.values():
-            serial = str(d.get("serial", ""))
-            if not serial or serial in already:
-                continue
-            device_type = d.get("type", "")
-            if device_type not in LUTRON_TYPE_MAP:
-                continue
-            devices.append({
-                "serial":      serial,
-                "name":        d.get("name", ""),
-                "area":        d.get("area_name", ""),
-                "type":        device_type,
-                "keypad_type": _infer_keypad_type(device_type),
-                "model":       d.get("model", "") or "",
-                "device_id":   str(d.get("device_id", "")),
-            })
-    connection.send_result(msg["id"], devices)
-
-
-@websocket_api.websocket_command({
-    vol.Required("type"):              f"{DOMAIN}/add_keypad",
-    vol.Required("serial"):            str,
-    vol.Required("name"):              str,
-    vol.Optional("device_id",  default=""): str,
-})
+async def _ws_discover_keypads(hass,connection,msg):
+	from.config_flow import _infer_keypad_type as E,LUTRON_TYPE_MAP as F;G={str(A.data.get(CONF_DEVICE_SERIAL,''))for A in hass.config_entries.async_entries(DOMAIN)};D=[]
+	for H in _iter_lutron_bridges(hass):
+		try:I=H.get_devices()
+		except Exception as J:_LOGGER.debug('get_devices() failed during discovery: %s',J);continue
+		for A in I.values():
+			B=str(A.get(_J,''))
+			if not B or B in G:continue
+			C=A.get(_D,'')
+			if C not in F:continue
+			D.append({_J:B,_K:A.get(_K,''),'area':A.get(_A2,''),_D:C,_A7:E(C),_X:A.get(_X,'')or'',_E:str(A.get(_E,''))})
+	connection.send_result(msg[_F],D)
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/add_keypad",vol.Required(_J):str,vol.Required(_K):str,vol.Optional(_E,default=''):str})
 @websocket_api.async_response
-async def _ws_add_keypad(hass: HomeAssistant, connection, msg: dict) -> None:
-    """Create a config entry for a Lutron device selected in the panel."""
-    from .config_flow import _infer_keypad_type, _detect_button_layout
-
-    serial    = msg["serial"]
-    name      = (msg.get("name") or serial).strip()
-    device_id = msg.get("device_id", "")
-
-    device_type = area_name = device_name = model_number = ""
-    for bridge in _iter_lutron_bridges(hass):
-        try:
-            all_devs: dict = bridge.get_devices()
-        except Exception:  # noqa: BLE001
-            continue
-        for d in all_devs.values():
-            if str(d.get("serial", "")) == serial:
-                device_type  = d.get("type", "")
-                area_name    = d.get("area_name", "")
-                device_name  = d.get("name", "")
-                model_number = d.get("model", "") or ""
-                device_id    = str(d.get("device_id", "")) or device_id
-                break
-        if device_type:
-            break
-
-    ktype    = _infer_keypad_type(device_type)
-    detected = _detect_button_layout(
-        hass, serial, ktype,
-        device_name=device_name, area_name=area_name, device_id=device_id,
-    )
-
-    entry_data = {
-        "name":             name,
-        CONF_DEVICE_SERIAL: serial,
-        CONF_DEVICE_NAME:   device_name,
-        CONF_AREA_NAME:     area_name,
-        CONF_KEYPAD_TYPE:   ktype,
-        "lutron_type":      device_type,
-        "model_number":     model_number,
-        "device_id":        device_id,
-        **detected,
-    }
-
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": "panel"},
-        data=entry_data,
-    )
-
-    if result.get("type") == "create_entry":
-        entry = result.get("result")
-        connection.send_result(msg["id"], {
-            "success":  True,
-            "entry_id": entry.entry_id if entry else "",
-        })
-    elif result.get("type") == "abort":
-        reason = result.get("reason", "unknown")
-        connection.send_error(msg["id"], reason, f"Could not add keypad: {reason}")
-    else:
-        connection.send_error(msg["id"], "flow_error", "Unexpected flow result")
-
-
-@websocket_api.websocket_command({
-    vol.Required("type"):     f"{DOMAIN}/delete_keypad",
-    vol.Required("entry_id"): str,
-})
+async def _ws_add_keypad(hass,connection,msg):
+	H=connection;G=hass;A=msg;from.config_flow import _infer_keypad_type as O,_detect_button_layout as P;C=A[_J];Q=(A.get(_K)or C).strip();D=A.get(_E,'');E=I=J=K=''
+	for R in _iter_lutron_bridges(G):
+		try:S=R.get_devices()
+		except Exception:continue
+		for B in S.values():
+			if str(B.get(_J,''))==C:E=B.get(_D,'');I=B.get(_A2,'');J=B.get(_K,'');K=B.get(_X,'')or'';D=str(B.get(_E,''))or D;break
+		if E:break
+	L=O(E);T=P(G,C,L,device_name=J,area_name=I,device_id=D);U={_K:Q,CONF_DEVICE_SERIAL:C,CONF_DEVICE_NAME:J,CONF_AREA_NAME:I,CONF_KEYPAD_TYPE:L,_A6:E,_W:K,_E:D,**T};F=await G.config_entries.flow.async_init(DOMAIN,context={'source':'panel'},data=U)
+	if F.get(_D)=='create_entry':M=F.get('result');H.send_result(A[_F],{_m:_B,_M:M.entry_id if M else''})
+	elif F.get(_D)=='abort':N=F.get('reason',_c);H.send_error(A[_F],N,f"Could not add keypad: {N}")
+	else:H.send_error(A[_F],'flow_error','Unexpected flow result')
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/delete_keypad",vol.Required(_M):str})
 @websocket_api.async_response
-async def _ws_delete_keypad(hass: HomeAssistant, connection, msg: dict) -> None:
-    """Remove a keypad config entry entirely."""
-    entry_id = msg["entry_id"]
-    entry = hass.config_entries.async_get_entry(entry_id)
-    if entry is None or entry.domain != DOMAIN:
-        connection.send_error(msg["id"], "not_found", f"Entry '{entry_id}' not found")
-        return
-    await hass.config_entries.async_remove(entry_id)
-    connection.send_result(msg["id"], {"success": True})
-
-
-# ── Setup ─────────────────────────────────────────────────────────────────────
-
-async def _register_panel_once(hass: HomeAssistant) -> None:
-    """Register the programming panel and static JS path (idempotent)."""
-    if hass.data.get(DOMAIN, {}).get("_panel_registered"):
-        return
-
-    panel_js = _COMPONENT_DIR / "frontend" / "lutron_panel.js"
-
-    # HA 2024.x renamed register_static_path → async_register_static_paths
-    try:
-        from homeassistant.components.http import StaticPathConfig
-        await hass.http.async_register_static_paths([
-            StaticPathConfig("/lutron_keypad_panel.js", str(panel_js), cache_headers=False)
-        ])
-    except (AttributeError, ImportError):
-        try:
-            hass.http.register_static_path(  # type: ignore[attr-defined]
-                "/lutron_keypad_panel.js", str(panel_js), cache_headers=False
-            )
-        except Exception as exc:
-            _LOGGER.warning("Could not register static path for panel: %s", exc)
-
-    try:
-        frontend.async_register_built_in_panel(
-            hass,
-            component_name="custom",
-            sidebar_title="Lutron Keypads",
-            sidebar_icon="mdi:keyboard-outline",
-            frontend_url_path="lutron-keypads",
-            config={
-                "_panel_custom": {
-                    "name": "lutron-keypad-panel",
-                    "module_url": "/lutron_keypad_panel.js",
-                }
-            },
-            require_admin=True,
-        )
-        _LOGGER.info("Lutron Keypads programming panel registered at /lutron-keypads")
-    except Exception as exc:
-        _LOGGER.warning("Could not register Lutron Keypads panel: %s", exc)
-
-    websocket_api.async_register_command(hass, _ws_get_entries)
-    websocket_api.async_register_command(hass, _ws_save_keypad_config)
-    websocket_api.async_register_command(hass, _ws_discover_keypads)
-    websocket_api.async_register_command(hass, _ws_add_keypad)
-    websocket_api.async_register_command(hass, _ws_delete_keypad)
-
-    hass.data.setdefault(DOMAIN, {})["_panel_registered"] = True
-
-
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up via configuration.yaml."""
-    hass.data.setdefault(DOMAIN, {})
-
-    await _register_panel_once(hass)
-
-    if DOMAIN not in config:
-        return True
-
-    keypads_cfg: list[dict] = config[DOMAIN].get("keypads", [])
-    controllers: list[LutronKeypadsController] = []
-
-    for kp_cfg in keypads_cfg:
-        ctrl = LutronKeypadsController(hass, kp_cfg)
-        controllers.append(ctrl)
-        ctrl.async_register()
-
-    hass.data[DOMAIN]["controllers"] = controllers
-
-    hass.services.async_register(DOMAIN, "debug_leds", _async_debug_leds)
-    return True
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up from a config entry; reads button config from options (UI) first."""
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN].setdefault("controllers", [])
-    hass.data[DOMAIN].setdefault("entry_controllers", {})
-
-    await _register_panel_once(hass)
-
-    # Populate button layout for entries that were created before auto-detection worked.
-    # Try immediately; if the bridge isn't ready yet, retry after HA finishes starting.
-    await _auto_refresh_button_layout(hass, entry)
-    if not entry.data.get("button_numbers") or "model_number" not in entry.data:
-        async def _deferred_refresh(_event: Event | None = None) -> None:
-            await _auto_refresh_button_layout(hass, entry)
-
-        if hass.state is CoreState.running:
-            hass.async_create_task(_deferred_refresh())
-        else:
-            entry.async_on_unload(
-                hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _deferred_refresh)
-            )
-
-    buttons_cfg = _build_buttons_from_options(entry.options.get("buttons", {}))
-
-    kp_cfg: dict = {
-        "name":                 entry.title,
-        CONF_DEVICE_SERIAL:     entry.data.get(CONF_DEVICE_SERIAL, ""),
-        CONF_DEVICE_NAME:       entry.data.get(CONF_DEVICE_NAME, ""),
-        CONF_AREA_NAME:         entry.data.get(CONF_AREA_NAME, ""),
-        CONF_KEYPAD_TYPE:       entry.data.get(CONF_KEYPAD_TYPE, "generic"),
-        "device_id":            entry.data.get("device_id", ""),
-        "button_numbers":       entry.data.get("button_numbers", []),
-        "configurable_buttons": entry.data.get("configurable_buttons", []),
-        "raise_button":         entry.data.get("raise_button"),
-        "lower_button":         entry.data.get("lower_button"),
-        "button_names":         entry.data.get("button_names", {}),
-        "leap_button_map":      entry.data.get("leap_button_map", {}),
-        CONF_BUTTONS:           buttons_cfg,
-    }
-
-    ctrl = LutronKeypadsController(hass, kp_cfg, config_entry=entry)
-    if buttons_cfg:
-        ctrl.async_register()
-        _LOGGER.info("Keypad '%s' loaded from UI options with %d button(s)", entry.title, len(buttons_cfg))
-    else:
-        _LOGGER.info(
-            "Keypad '%s' loaded (no buttons configured yet). "
-            "Click the gear icon to configure buttons, or add YAML under lutron_keypad_controller:",
-            entry.title,
-        )
-
-    hass.data[DOMAIN]["entry_controllers"][entry.entry_id] = ctrl
-    hass.data[DOMAIN]["controllers"].append(ctrl)
-
-    if not hass.services.has_service(DOMAIN, "debug_leds"):
-        hass.services.async_register(DOMAIN, "debug_leds", _async_debug_leds)
-
-    # Populate LED map before platforms set up so switch entities can subscribe
-    await ctrl.async_initialize()
-
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
-
-    await _cleanup_orphaned_entities(hass, entry)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    return True
-
-
-async def _cleanup_orphaned_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove stale entity registry entries from older versions."""
-    ent_reg = er.async_get(hass)
-    for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-        uid = reg_entry.unique_id
-        # v2.1.x multi-slot text entities
-        if any(f"_entity_{n}" in uid for n in ("2", "3", "4")):
-            ent_reg.async_remove(reg_entry.entity_id)
-            _LOGGER.info("Removed orphaned multi-slot entity: %s", reg_entry.entity_id)
-        # v2.3.x text entities now replaced by read-only sensors
-        elif reg_entry.entity_id.startswith("text.") and any(
-            uid.endswith(s) for s in ("_entity_1", "_led", "_scene_group")
-        ):
-            ent_reg.async_remove(reg_entry.entity_id)
-            _LOGGER.info("Removed old text entity (now a sensor): %s", reg_entry.entity_id)
-        # v3.3.x _enabled switch replaced by _led switch
-        elif reg_entry.entity_id.startswith("switch.") and uid.endswith("_enabled"):
-            ent_reg.async_remove(reg_entry.entity_id)
-            _LOGGER.info("Removed old enabled-toggle switch (now LED switch): %s", reg_entry.entity_id)
-
-
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    ctrl = hass.data[DOMAIN].get("entry_controllers", {}).pop(entry.entry_id, None)
-    if ctrl is not None:
-        ctrl.async_unregister()
-        try:
-            hass.data[DOMAIN]["controllers"].remove(ctrl)
-        except ValueError:
-            pass
-    return unload_ok
-
-
-async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry when options are saved so new button config takes effect."""
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
-# ── LED map key normalization ─────────────────────────────────────────────────
-
-def _normalize_led_map(
-    raw_led_map: dict[int, str],
-    config_entry: ConfigEntry,
-) -> dict[int, str]:
-    """Remap LED map keys to match the sequential button numbers used by events and options.
-
-    Events fire with a device-local sequential ``leap_button_number`` (e.g. 1, 2, 3 …).
-    LED discovery extracts LEAP *global component IDs* from entity unique_ids
-    (e.g. 5376, 5380 …).  These are different number spaces.
-
-    ``get_button_list`` always returns sequential 1-N regardless of bridge
-    detection — that is the number space events and the options flow use.
-    ``get_button_layout`` uses bridge-detected IDs when available; those IDs
-    match the raw_led_map keys when bridge detection succeeded.
-
-    Remapping strategy: sort both sets by value and zip them positionally.
-    Lutron assigns global component IDs in physical button order within a device,
-    so ascending sort order preserves physical position.
-    """
-    if not raw_led_map:
-        return raw_led_map
-
-    entry_data = config_entry.data
-    # Sequential layout is what events use (local leap_button_number 1, 2, 3 …)
-    seq_layout = get_button_list(entry_data.get(CONF_KEYPAD_TYPE, KEYPAD_GENERIC))
-    seq_numbers = {b["number"] for b in seq_layout}
-
-    # Fast path: keys are already sequential (no remap needed)
-    if any(k in seq_numbers for k in raw_led_map):
-        return raw_led_map
-
-    # Keys are LEAP global component IDs — remap by ascending sort order
-    # (raise/lower buttons don't have LED entities so exclude them as targets)
-    configurable_seq = sorted(
-        b["number"] for b in seq_layout
-        if not b["is_raise"] and not b["is_lower"]
-    )
-    sorted_leap = sorted(raw_led_map.keys())
-
-    remapped: dict[int, str] = {}
-    for btn_num, leap_id in zip(configurable_seq, sorted_leap):
-        remapped[btn_num] = raw_led_map[leap_id]
-
-    _LOGGER.info(
-        "'%s': LED map: LEAP global IDs %s → sequential button numbers %s",
-        config_entry.title,
-        sorted_leap,
-        list(remapped.keys()),
-    )
-    return remapped
-
-
-# ── Controller ────────────────────────────────────────────────────────────────
-
+async def _ws_delete_keypad(hass,connection,msg):
+	C=connection;A=msg;B=A[_M];D=hass.config_entries.async_get_entry(B)
+	if D is _A or D.domain!=DOMAIN:C.send_error(A[_F],_A1,f"Entry '{B}' not found");return
+	await hass.config_entries.async_remove(B);C.send_result(A[_F],{_m:_B})
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/license_status",vol.Optional(_M):str})
+@websocket_api.async_response
+async def _ws_license_status(hass,connection,msg):
+	N='error';M='valid';L='has_key';H='loaded';F=connection;E=msg;C=hass;from.license import LicenseError as O,load_license_cache as P,validate_license_offline as Q;I=E.get(_M)
+	if I:D=C.config_entries.async_get_entry(I)
+	else:J=C.config_entries.async_entries(DOMAIN);D=J[0]if J else _A
+	R=await async_get_instance_id(C);A={'instance_id':R,L:_C,M:_C,H:_C,N:_A}
+	if D is _A:F.send_result(E[_F],A);return
+	A[_M]=D.entry_id;A[H]=D.state.value==H;G=(D.options.get(_d)or'').strip();A[L]=bool(G)
+	if not G:F.send_result(E[_F],A);return
+	S=await async_get_integration(C,DOMAIN)
+	try:B=Q(G,current_version=str(S.version));A.update({M:_B,_e:B.jti,'product':B.product,'expires_at':B.expires_at,'binding':B.binding,'bound_instance':B.instance_id,'max_version':B.max_version,'warn_only':B.warn_only})
+	except O as T:A[N]=str(T)
+	K=await P(C)
+	if A.get(_e)and K.get(_e)==A.get(_e):A['last_check']=K.get('last_ok')
+	F.send_result(E[_F],A)
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/set_license",vol.Required(_M):str,vol.Required(_d):str})
+@websocket_api.async_response
+async def _ws_set_license(hass,connection,msg):
+	D=connection;C=msg;B=hass;A=B.config_entries.async_get_entry(C[_M])
+	if A is _A or A.domain!=DOMAIN:D.send_error(C[_F],_A1,'Entry not found');return
+	E={**A.options,_d:C[_d].strip()};B.config_entries.async_update_entry(A,options=E);B.async_create_task(B.config_entries.async_reload(A.entry_id));D.send_result(C[_F],{_m:_B})
+async def _register_panel_once(hass):
+	E='_panel_registered';C='/lutron_keypad_panel.js';A=hass
+	if A.data.get(DOMAIN,{}).get(E):return
+	D=_COMPONENT_DIR/'frontend'/'lutron_panel.js'
+	try:from homeassistant.components.http import StaticPathConfig as F;await A.http.async_register_static_paths([F(C,str(D),cache_headers=_C)])
+	except(AttributeError,ImportError):
+		try:A.http.register_static_path(C,str(D),cache_headers=_C)
+		except Exception as B:_LOGGER.warning('Could not register static path for panel: %s',B)
+	try:frontend.async_register_built_in_panel(A,component_name='custom',sidebar_title='Lutron Keypads',sidebar_icon='mdi:keyboard-outline',frontend_url_path='lutron-keypads',config={'_panel_custom':{_K:'lutron-keypad-panel','module_url':C}},require_admin=_B);_LOGGER.info('Lutron Keypads programming panel registered at /lutron-keypads')
+	except Exception as B:_LOGGER.warning('Could not register Lutron Keypads panel: %s',B)
+	websocket_api.async_register_command(A,_ws_get_entries);websocket_api.async_register_command(A,_ws_save_keypad_config);websocket_api.async_register_command(A,_ws_discover_keypads);websocket_api.async_register_command(A,_ws_add_keypad);websocket_api.async_register_command(A,_ws_delete_keypad);websocket_api.async_register_command(A,_ws_license_status);websocket_api.async_register_command(A,_ws_set_license);A.data.setdefault(DOMAIN,{})[E]=_B
+async def async_setup(hass,config):
+	B=config;A=hass;A.data.setdefault(DOMAIN,{});await _register_panel_once(A)
+	if DOMAIN not in B:return _B
+	E=B[DOMAIN].get('keypads',[]);C=[]
+	for F in E:D=LutronKeypadsController(A,F);C.append(D);D.async_register()
+	A.data[DOMAIN][_n]=C;A.services.async_register(DOMAIN,_A3,_async_debug_leds);return _B
+async def async_setup_entry(hass,entry):
+	B=hass;A=entry;B.data.setdefault(DOMAIN,{});G=B.data[DOMAIN].setdefault('_reload_listeners',set())
+	if A.entry_id not in G:A.add_update_listener(_async_reload_entry);G.add(A.entry_id)
+	await _register_panel_once(B);H=(A.options.get(_d)or'').strip()
+	if not H:_LOGGER.error("Ctrlable Lutron Keypad: no license key configured. Open the integration's Configure dialog and paste your license key (obtain one from portal.ctrlable.com).");return _C
+	N=await async_get_integration(B,DOMAIN);O=str(N.version)
+	try:C=validate_license_offline(H,current_version=O)
+	except LicenseError as P:_LOGGER.error('Ctrlable Lutron Keypad: license validation failed — %s',P);return _C
+	if C.warn_only:_LOGGER.warning('Ctrlable Lutron Keypad: license has expired but warn_only mode is active. Please renew your license.')
+	D=await async_get_instance_id(B)
+	if C.binding=='instance'and C.instance_id and C.instance_id!=D:_LOGGER.error('Ctrlable Lutron Keypad: license is bound to instance %s; this HA is %s.',C.instance_id,D);return _C
+	I=await check_revocation_online(C.jti,instance_id=D)
+	if I is _C:_LOGGER.error('Ctrlable Lutron Keypad: license rejected by portal. Aborting setup.');return _C
+	J=await load_license_cache(B);K=J.get('last_ok')if J.get(_e)==C.jti else _A
+	if I is _B:await save_license_cache(B,C.jti)
+	elif K is not _A:
+		L=(time.time()-K)/86400
+		if L>30:_LOGGER.warning('Ctrlable Lutron Keypad: portal unreachable for %.0f days. Ensure this device can reach portal.ctrlable.com periodically.',L)
+	B.data.setdefault(DOMAIN,{});B.data[DOMAIN].setdefault(_n,[]);B.data[DOMAIN].setdefault(_l,{});await _auto_refresh_button_layout(B,A)
+	if not A.data.get(_V)or _W not in A.data:
+		async def M(_event=_A):await _auto_refresh_button_layout(B,A)
+		if B.state is CoreState.running:B.async_create_task(M())
+		else:A.async_on_unload(B.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED,M))
+	F=_build_buttons_from_options(A.options.get(_Y,{}));Q={_K:A.title,CONF_DEVICE_SERIAL:A.data.get(CONF_DEVICE_SERIAL,''),CONF_DEVICE_NAME:A.data.get(CONF_DEVICE_NAME,''),CONF_AREA_NAME:A.data.get(CONF_AREA_NAME,''),CONF_KEYPAD_TYPE:A.data.get(CONF_KEYPAD_TYPE,_s),_E:A.data.get(_E,''),_V:A.data.get(_V,[]),_v:A.data.get(_v,[]),_w:A.data.get(_w),_x:A.data.get(_x),_y:A.data.get(_y,{}),_k:A.data.get(_k,{}),CONF_BUTTONS:F};E=LutronKeypadsController(B,Q,config_entry=A)
+	if F:E.async_register();_LOGGER.info("Keypad '%s' loaded from UI options with %d button(s)",A.title,len(F))
+	else:_LOGGER.info("Keypad '%s' loaded (no buttons configured yet). Click the gear icon to configure buttons, or add YAML under lutron_keypad_controller:",A.title)
+	B.data[DOMAIN][_l][A.entry_id]=E;B.data[DOMAIN][_n].append(E)
+	if not B.services.has_service(DOMAIN,_A3):B.services.async_register(DOMAIN,_A3,_async_debug_leds)
+	await E.async_initialize();await _cleanup_orphaned_entities(B,A);await B.config_entries.async_forward_entry_setups(A,PLATFORMS);B.async_create_background_task(periodic_revocation_check(B,C.jti,A.entry_id,instance_id=D),name=f"lutron_keypad_license_check_{A.entry_id}");return _B
+async def _cleanup_orphaned_entities(hass,entry):
+	B=er.async_get(hass)
+	for A in er.async_entries_for_config_entry(B,entry.entry_id):
+		C=A.unique_id
+		if any(f"_entity_{A}"in C for A in('2','3','4')):B.async_remove(A.entity_id);_LOGGER.info('Removed orphaned multi-slot entity: %s',A.entity_id)
+		elif A.entity_id.startswith('text.')and any(C.endswith(A)for A in('_entity_1','_led','_scene_group')):B.async_remove(A.entity_id);_LOGGER.info('Removed old text entity (now a sensor): %s',A.entity_id)
+		elif A.entity_id.startswith('switch.')and C.endswith('_enabled'):B.async_remove(A.entity_id);_LOGGER.info('Removed old enabled-toggle switch (now LED switch): %s',A.entity_id)
+async def async_unload_entry(hass,entry):
+	C=entry;A=hass;D=await A.config_entries.async_unload_platforms(C,PLATFORMS);B=A.data[DOMAIN].get(_l,{}).pop(C.entry_id,_A)
+	if B is not _A:
+		B.async_unregister()
+		try:A.data[DOMAIN][_n].remove(B)
+		except ValueError:pass
+	return D
+async def _async_reload_entry(hass,entry):await hass.config_entries.async_reload(entry.entry_id)
+def _normalize_led_map(raw_led_map,config_entry):
+	F='number';C=config_entry;A=raw_led_map
+	if not A:return A
+	G=C.data;D=get_button_list(G.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC));H={A[F]for A in D}
+	if any(A in H for A in A):return A
+	I=sorted(A[F]for A in D if not A['is_raise']and not A['is_lower']);E=sorted(A.keys());B={}
+	for(J,K)in zip(I,E):B[J]=A[K]
+	_LOGGER.info("'%s': LED map: LEAP global IDs %s → sequential button numbers %s",C.title,E,list(B.keys()));return B
 class LutronKeypadsController:
-    """Manages a single Lutron keypad and dispatches button events."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        config: dict,
-        config_entry: ConfigEntry | None = None,
-    ) -> None:
-        self.hass = hass
-        self.name: str = config["name"]
-        self.serial: str = str(config.get(CONF_DEVICE_SERIAL, "")).strip()
-        self.device_id: str = str(config.get("device_id", "")).strip()
-        self.device_name: str = config.get(CONF_DEVICE_NAME, "").strip().lower()
-        self.area_name: str = config.get(CONF_AREA_NAME, "").strip().lower()
-        self.keypad_type: str = config.get(CONF_KEYPAD_TYPE, "generic")
-        self.scene_group: str = config.get("scene_group", "").strip()
-        self._config_entry = config_entry
-
-        # Index buttons by button_number
-        self._buttons: dict[int, dict] = {}
-        for btn in config.get(CONF_BUTTONS, []):
-            self._buttons[btn[CONF_BUTTON_NUMBER]] = btn
-
-        # Per-controller runtime state
-        self._active_scene_btn: int | None = None
-        self._last_action: dict | None = None
-        self._cover_states: dict[int, str] = {}
-        self._light_dim_indices: dict[int, int] = {}
-        self._unsubscribe = None
-
-        # LED / switch entity tracking
-        self._led_map: dict[int, str] = {}       # btn_num → auto-discovered led entity_id
-        self._button_switches: dict[int, Any] = {}  # btn_num → LutronButtonSwitch
-        # LEAP button number → configured button number
-        # Events use leap_button_number; config stores button_number (can differ for raise/lower).
-        # Seeded from entry.data["leap_button_map"] stored at config time (most reliable path).
-        self._leap_btn_map: dict[int, int] = {}
-        if config_entry is not None:
-            stored = config_entry.data.get("leap_button_map", {})
-            self._leap_btn_map = {int(k): v for k, v in stored.items()}
-
-        # Press-and-hold tracking (synchronous call_later state machine)
-        self._press_times:       dict[int, float] = {}  # monotonic time of last press
-        self._last_press_times:  dict[int, float] = {}  # time of previous press (double-tap)
-        self._last_dispatch_times: dict[int, float] = {}  # time of last TAP/action dispatch
-        self._held:              dict[int, bool]  = {}  # True while hold-event ramp is active
-        self._confirm_handles:  dict             = {}  # call_later handle: hold-confirm window
-        self._ramp_tasks:   dict[int, asyncio.Task] = {}  # active ramp coroutine per button
-        self._ramp_dirs:        dict[int, str]   = {}  # last ramp direction per button
-        self._ramp_end_times:   dict[int, float] = {}  # time last ramp ended per button
-
-        # Sensors to notify when _last_action changes
-        self._state_sensors: list = []
-
-        # Entity-state tracking for entity_toggle LED sync (Room/Scene Mode)
-        self._entity_tracking_unsubs: list = []
-
-    # ── Registration ──────────────────────────────────────────────────────────
-
-    @callback
-    def async_register(self) -> None:
-        """Subscribe to lutron_caseta_button_event events."""
-        self._unsubscribe = self.hass.bus.async_listen(LUTRON_EVENT, self._handle_event)
-        _LOGGER.info("Lutron Keypad Controller '%s' registered (serial=%s)", self.name, self.serial)
-
-    @callback
-    def async_unregister(self) -> None:
-        for unsub in self._entity_tracking_unsubs:
-            unsub()
-        self._entity_tracking_unsubs.clear()
-        """Unsubscribe from events (called on entry unload)."""
-        if self._unsubscribe is not None:
-            self._unsubscribe()
-            self._unsubscribe = None
-            _LOGGER.debug("Lutron Keypad Controller '%s' unregistered", self.name)
-        for handle in self._confirm_handles.values():
-            handle.cancel()
-        self._confirm_handles.clear()
-        for task in self._ramp_tasks.values():
-            task.cancel()
-        self._ramp_tasks.clear()
-        self._press_times.clear()
-        self._last_dispatch_times.clear()
-        self._held.clear()
-        self._ramp_end_times.clear()
-
-    # ── Initialization ────────────────────────────────────────────────────────
-
-    async def _build_leap_btn_map(self) -> None:
-        """Map LEAP button numbers (used in events) to configured button numbers.
-
-        Prefer the map stored in entry.data (built at config time when the bridge
-        is guaranteed available).  Fall back to a runtime bridge query when the
-        stored map is absent (e.g. entries created before v3.5.31).
-
-        Searches ALL loaded lutron_caseta bridges so the correct bridge is used
-        in multi-bridge deployments (Caseta Pro + RA3 on the same HA instance).
-        """
-        if self._leap_btn_map:
-            _LOGGER.debug(
-                "'%s': _build_leap_btn_map — using stored map %s",
-                self.name, self._leap_btn_map,
-            )
-            return
-
-        any_bridge = False
-        for bridge in _iter_lutron_bridges(self.hass):
-            any_bridge = True
-            button_devices: dict = getattr(bridge, "button_devices", None) or {}
-            if not button_devices:
-                continue  # Caseta Pro bridge — no button_devices
-
-            matched = 0
-            for bd in button_devices.values():
-                bd_serial    = str(bd.get("serial", ""))
-                bd_device_id = str(bd.get("device_id", ""))
-                if bd_serial != self.serial and bd_device_id != self.device_id:
-                    continue
-                matched += 1
-                canonical = None
-                for key in ("button_number", "leap_button_number"):
-                    raw = bd.get(key)
-                    if raw is not None:
-                        try:
-                            canonical = int(raw)
-                            break
-                        except (TypeError, ValueError):
-                            pass
-                leap_raw = bd.get("leap_button_number")
-                if canonical is not None and leap_raw is not None:
-                    try:
-                        self._leap_btn_map[int(leap_raw)] = canonical
-                    except (TypeError, ValueError):
-                        pass
-
-            if matched > 0:
-                _LOGGER.debug(
-                    "'%s': _build_leap_btn_map — matched %d entries on bridge, map=%s",
-                    self.name, matched, self._leap_btn_map,
-                )
-                return  # Found the right bridge — done
-
-        if not any_bridge:
-            _LOGGER.warning(
-                "'%s': _build_leap_btn_map — no lutron_caseta bridge found; "
-                "raise/lower LEAP remapping unavailable.",
-                self.name,
-            )
-        else:
-            _LOGGER.debug(
-                "'%s': _build_leap_btn_map — no bridge had this serial in "
-                "button_devices (expected for Caseta Pro).",
-                self.name,
-            )
-
-    async def async_initialize(self) -> None:
-        """Discover LED entities — button-entity method first, registry scan as fallback."""
-        if self._config_entry is None:
-            return
-        await self._build_leap_btn_map()
-        raw_map = await _find_led_entities_by_button_entities(
-            self.hass, self._config_entry
-        )
-        if not raw_map:
-            _LOGGER.debug(
-                "'%s': button-entity LED discovery found nothing — trying registry scan",
-                self.name,
-            )
-            raw_map = await _find_led_entities(self.hass, self._config_entry)
-        if raw_map:
-            self._led_map = _normalize_led_map(raw_map, self._config_entry)
-            _LOGGER.warning(
-                "'%s': LED map ready (keys = sequential button numbers): %s",
-                self.name, self._led_map,
-            )
-        else:
-            _LOGGER.debug(
-                "'%s': no LED entities found (expected for CASETA Pro keypads "
-                "without LED feedback). Call debug_leds service to diagnose.",
-                self.name,
-            )
-
-        self._setup_entity_state_tracking()
-
-    # ── LED helpers ───────────────────────────────────────────────────────────
-
-    def _get_led_entity(self, btn_num: int) -> str | None:
-        """Return LED entity for a button; manual config takes priority over auto-discovery."""
-        manual = self._buttons.get(btn_num, {}).get(CONF_LED_ENTITY, "")
-        return manual if manual else self._led_map.get(btn_num)
-
-    def register_button_switch(self, btn_num: int, switch: Any) -> None:
-        self._button_switches[btn_num] = switch
-        # Sync initial LED state now that the switch entity is registered.
-        # For entity_toggle buttons the LED tracks entity states (Room/Scene Mode),
-        # not the last button press, so we push the correct value immediately.
-        btn_cfg = self._buttons.get(btn_num, {})
-        action_type = btn_cfg.get(CONF_ACTION_TYPE)
-        entities = _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
-        if entities:
-            if action_type == ACTION_ENTITY_TOGGLE:
-                self._update_entity_toggle_led(btn_num, btn_cfg, entities)
-            elif action_type == ACTION_SINGLE_ACTION:
-                self._update_scene_mode_led(btn_num, entities)
-
-    @callback
-    def _update_entity_toggle_led(
-        self, btn_num: int, btn_cfg: dict, entities: list[str]
-    ) -> None:
-        """Update LED for entity_toggle button using the configured LED mode."""
-        mode = btn_cfg.get(CONF_LED_MODE, LED_MODE_ROOM)
-        if mode == LED_MODE_SCENE:
-            self._update_scene_mode_led(btn_num, entities)
-        elif mode == LED_MODE_PATHWAY:
-            self._update_pathway_mode_led(btn_num, entities)
-        else:
-            self._update_room_mode_led(btn_num, entities)
-
-    @callback
-    def _update_room_mode_led(self, btn_num: int, entities: list[str]) -> None:
-        """Room Mode: LED on if ANY assigned entity is on, off when all are off."""
-        any_on = any(
-            (st := self.hass.states.get(eid)) is not None
-            and st.state not in ("off", "closed", "unavailable", "unknown", "none")
-            for eid in entities
-        )
-        self._update_button_switch_state(btn_num, any_on)
-        self.hass.async_create_task(self._write_led_entity(btn_num, any_on))
-
-    @callback
-    def _update_pathway_mode_led(self, btn_num: int, entities: list[str]) -> None:
-        """Pathway Mode: LED on when ALL assigned entities are on at any level."""
-        all_on = bool(entities) and all(
-            (st := self.hass.states.get(eid)) is not None
-            and st.state not in ("off", "closed", "unavailable", "unknown", "none")
-            for eid in entities
-        )
-        self._update_button_switch_state(btn_num, all_on)
-        self.hass.async_create_task(self._write_led_entity(btn_num, all_on))
-
-    @callback
-    def _update_scene_mode_led(self, btn_num: int, entities: list[str]) -> None:
-        """Scene Mode: LED on when ALL entities are on AND at their configured target state.
-
-        If no target brightness/CCT is configured, "on at any level" satisfies the check.
-        """
-        btn_cfg = self._buttons.get(btn_num, {})
-        global_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
-        global_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
-        entity_settings: dict = btn_cfg.get(CONF_ENTITY_SETTINGS, {})
-
-        def _at_target(eid: str) -> bool:
-            st = self.hass.states.get(eid)
-            if st is None or st.state in ("off", "closed", "unavailable", "unknown", "none"):
-                return False
-            if not eid.startswith("light."):
-                return True  # non-light: just being "on" satisfies scene
-            ent_cfg = entity_settings.get(eid, {})
-            target_bri = int(ent_cfg.get("brightness") or global_bri)
-            target_cct = int(ent_cfg.get("color_temp") or global_cct)
-            if target_bri > 0:
-                current_pct = round((st.attributes.get("brightness", 0) or 0) / 255 * 100)
-                if abs(current_pct - target_bri) > 5:
-                    return False
-            if target_cct > 0:
-                current_k = st.attributes.get("color_temp_kelvin")
-                if current_k is None:
-                    mireds = st.attributes.get("color_temp")
-                    if mireds:
-                        current_k = round(1_000_000 / mireds)
-                if current_k is not None and abs(int(current_k) - target_cct) > 100:
-                    return False
-            return True
-
-        all_match = bool(entities) and all(_at_target(eid) for eid in entities)
-        self._update_button_switch_state(btn_num, all_match)
-        self.hass.async_create_task(self._write_led_entity(btn_num, all_match))
-
-    def _setup_entity_state_tracking(self) -> None:
-        """Subscribe to state changes for entity_toggle buttons (Room/Scene Mode LED sync)."""
-        for unsub in self._entity_tracking_unsubs:
-            unsub()
-        self._entity_tracking_unsubs.clear()
-
-        for btn_num, btn_cfg in self._buttons.items():
-            action_type = btn_cfg.get(CONF_ACTION_TYPE)
-            if action_type not in (ACTION_ENTITY_TOGGLE, ACTION_SINGLE_ACTION):
-                continue
-            entities = _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
-            if not entities:
-                continue
-
-            if action_type == ACTION_SINGLE_ACTION:
-                @callback
-                def _on_single_change(
-                    event: Any, _btn=btn_num, _ents=entities
-                ) -> None:
-                    self._update_scene_mode_led(_btn, _ents)
-
-                unsub = async_track_state_change_event(self.hass, entities, _on_single_change)
-                self._entity_tracking_unsubs.append(unsub)
-                _LOGGER.debug(
-                    "'%s': button %d: single_action scene LED tracking %s",
-                    self.name, btn_num, entities,
-                )
-            else:
-                mode = btn_cfg.get(CONF_LED_MODE, LED_MODE_ROOM)
-
-                @callback
-                def _on_entity_change(
-                    event: Any, _btn=btn_num, _cfg=btn_cfg, _ents=entities
-                ) -> None:
-                    self._update_entity_toggle_led(_btn, _cfg, _ents)
-
-                unsub = async_track_state_change_event(self.hass, entities, _on_entity_change)
-                self._entity_tracking_unsubs.append(unsub)
-                _LOGGER.debug(
-                    "'%s': button %d: %s LED tracking %s",
-                    self.name, btn_num, mode, entities,
-                )
-
-    def register_state_sensor(self, sensor: Any) -> None:
-        if sensor not in self._state_sensors:
-            self._state_sensors.append(sensor)
-
-    @callback
-    def _notify_state_sensors(self) -> None:
-        for sensor in self._state_sensors:
-            sensor.async_write_ha_state()
-
-    def _update_button_switch_state(self, btn_num: int, is_on: bool) -> None:
-        switch = self._button_switches.get(btn_num)
-        if switch is not None:
-            switch.update_led_state(is_on)
-
-    async def _write_led_entity(self, btn_num: int, is_on: bool) -> None:
-        """Write ON/OFF to the physical LED switch entity bound to this button.
-
-        Respects the per-button ``led_invert`` flag — when True the logical
-        on/off is flipped before writing (useful for "lights off" indicators).
-
-        This both lights up the physical Lutron keypad LED and triggers
-        _handle_led_state_change in switch.py which mirrors the state to our
-        HA button switch.  No-op when no LED entity is bound.
-        """
-        led_entity = self._get_led_entity(btn_num)
-        if not led_entity:
-            return
-        btn_cfg = self._buttons.get(btn_num, {})
-        if btn_cfg.get(CONF_LED_INVERT, False):
-            is_on = not is_on
-        service = SERVICE_TURN_ON if is_on else SERVICE_TURN_OFF
-        try:
-            await self.hass.services.async_call(
-                "switch", service, {ATTR_ENTITY_ID: led_entity}, blocking=True
-            )
-            _LOGGER.debug(
-                "'%s': button %d LED '%s' → %s",
-                self.name, btn_num, led_entity, "ON" if is_on else "OFF",
-            )
-        except Exception as exc:
-            _LOGGER.warning(
-                "'%s': button %d could not write LED entity '%s': %s",
-                self.name, btn_num, led_entity, exc,
-            )
-
-    async def _write_group_leds(self, active_btn: int, active_btn_cfg: dict) -> None:
-        """For stateful_scene buttons: turn ON active button's LED, OFF all others in group."""
-        group = active_btn_cfg.get("scene_group") or self.scene_group
-        for btn_num, btn_cfg in self._buttons.items():
-            if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_STATEFUL_SCENE:
-                continue
-            if not self._get_led_entity(btn_num):
-                continue  # no LED entity bound; _sync_leds handles HA switch state
-            btn_group = btn_cfg.get("scene_group") or self.scene_group
-            if group and btn_group != group:
-                continue
-            await self._write_led_entity(btn_num, btn_num == active_btn)
-
-    async def _sync_leds(self, active_btn: int | None) -> None:
-        """Update HA switch states for stateful_scene buttons that have no LED entity.
-
-        Buttons that have a physical LED entity binding are skipped — their state
-        is driven by _handle_led_state_change after _write_group_leds writes to
-        the physical LED.
-        """
-        _LOGGER.debug("'%s': _sync_leds called, active_btn=%s", self.name, active_btn)
-        for btn_num, btn_cfg in self._buttons.items():
-            if btn_cfg.get(CONF_ACTION_TYPE) != ACTION_STATEFUL_SCENE:
-                continue
-            if self._get_led_entity(btn_num):
-                continue
-            should_be_on = (btn_num == active_btn)
-            _LOGGER.debug(
-                "'%s': Button %d (no LED entity) should_be_on=%s",
-                self.name, btn_num, should_be_on,
-            )
-            self._update_button_switch_state(btn_num, should_be_on)
-
-    def _try_auto_map_raise_lower(self, leap_num: int) -> int | None:
-        """Auto-detect and cache a raise/lower LEAP number on first encounter.
-
-        Uses RAISE_LOWER_BUTTON_TYPES (the static list of all known Lutron raise/lower
-        component IDs) to identify the event number without relying on entity naming.
-        Only fires when leap_num is not already a configured button, so it can never
-        accidentally remap a real action button.
-        """
-        from .const import RAISE_LOWER_BUTTON_TYPES
-        for action_type, known_nums in (
-            (ACTION_RAISE, RAISE_LOWER_BUTTON_TYPES["raise"]),
-            (ACTION_LOWER, RAISE_LOWER_BUTTON_TYPES["lower"]),
-        ):
-            if leap_num not in known_nums:
-                continue
-            configured = next(
-                (n for n, c in self._buttons.items()
-                 if c.get(CONF_ACTION_TYPE) == action_type),
-                None,
-            )
-            if configured is not None:
-                self._leap_btn_map[leap_num] = configured
-                _LOGGER.info(
-                    "'%s': auto-mapped raise/lower: leap_btn=%d → btn=%d (%s)",
-                    self.name, leap_num, configured, action_type,
-                )
-                return configured
-        return None
-
-    # ── Event matching ────────────────────────────────────────────────────────
-
-    def _matches_event(self, event_data: dict) -> bool:
-        """Return True if this event belongs to our keypad."""
-        # device_id is the most reliable — immune to serial type mismatches
-        ev_device_id = str(event_data.get("device_id", "")).strip()
-        if ev_device_id and self.device_id and ev_device_id == self.device_id:
-            return True
-
-        # Serial — convert both sides to string; Lutron fires it as an int
-        if self.serial:
-            ev_serial = str(event_data.get("serial", "")).strip()
-            if ev_serial and ev_serial == str(self.serial):
-                return True
-
-        # Last resort: device_name + area_name
-        ev_device = str(event_data.get("device_name", "")).lower()
-        ev_area   = str(event_data.get("area_name", "")).lower()
-
-        if self.device_name and self.area_name:
-            return ev_device == self.device_name and ev_area == self.area_name
-        if self.device_name:
-            return ev_device == self.device_name
-        if self.area_name:
-            return ev_area == self.area_name
-
-        return False
-
-    # ── Main event handler ────────────────────────────────────────────────────
-
-    @callback
-    def _handle_event(self, event: Event) -> None:
-        """Called for every lutron_caseta_button_event on the bus."""
-        data = event.data
-
-        _LOGGER.debug(
-            "'%s': event received — serial=%s device_id=%s "
-            "btn=%s leap_btn=%s action=%s",
-            self.name,
-            data.get("serial"), data.get("device_id"),
-            data.get("button_number"), data.get("leap_button_number"),
-            data.get("action"),
-        )
-
-        if not self._matches_event(data):
-            _LOGGER.debug(
-                "'%s': ignoring event — ev serial=%s device_id=%s / "
-                "our serial=%s device_id=%s",
-                self.name,
-                data.get("serial"), data.get("device_id"),
-                self.serial, self.device_id,
-            )
-            return
-
-        # Resolve button number: prefer button_number, fall back to leap_button_number.
-        # Then translate through _leap_btn_map so that raise/lower buttons whose
-        # button_devices entry uses button_number=7/8 but events fire leap_button_number=18/19
-        # are correctly mapped to the configured key.
-        raw_btn = data.get("button_number")
-        if raw_btn is None:
-            raw_leap = data.get("leap_button_number")
-            if raw_leap is None:
-                _LOGGER.debug(
-                    "'%s': event has no button_number or leap_button_number: %s",
-                    self.name, data,
-                )
-                return
-            raw_btn = int(raw_leap)
-        # Always apply LEAP remapping: on Caseta Pro button_number IS the LEAP
-        # number (e.g. 18/19 for raise/lower) and needs mapping to the configured
-        # sequential number (e.g. 7/8).  Regular buttons aren't in the map so
-        # they pass through unchanged.
-        btn_num = self._leap_btn_map.get(int(raw_btn), int(raw_btn))
-
-        _LOGGER.debug(
-            "'%s': matched — resolved btn_num=%d, configured buttons=%s",
-            self.name, btn_num, list(self._buttons.keys()),
-        )
-
-        btn_cfg = self._buttons.get(btn_num)
-        if btn_cfg is None:
-            # Button not found — try auto-mapping unknown raise/lower LEAP numbers
-            remapped = self._try_auto_map_raise_lower(btn_num)
-            if remapped is not None:
-                btn_num = remapped
-                btn_cfg = self._buttons.get(btn_num)
-        if btn_cfg is None:
-            _LOGGER.debug(
-                "'%s': button %d pressed but not configured — ignoring", self.name, btn_num
-            )
-            return
-
-        action_event = data.get("action", "press")
-
-        if action_event == "release":
-            self._handle_release(btn_num)
-            return
-
-        _LOGGER.info(
-            "'%s': button %d (%s) pressed — action_type=%s",
-            self.name,
-            btn_num,
-            btn_cfg.get(CONF_BUTTON_LABEL, ""),
-            btn_cfg[CONF_ACTION_TYPE],
-        )
-
-        self._on_press(btn_num, btn_cfg)
-
-    # ── Press / release / hold event ─────────────────────────────────────────
-    #
-    # Hardware model: the Lutron Caseta bridge batches press + release together
-    # when a button is tapped quickly (both events arrive within ~1 ms of each
-    # other).  For a physical hold the bridge sends press immediately and delays
-    # the release until the finger actually lifts.
-    #
-    #   PRESS  → arm hold timer (_HOLD_CONFIRM ms).
-    #            Non-hold actions dispatch immediately on press.
-    #
-    #   RELEASE (before hold timer fires) → TAP: cancel timer → dispatch.
-    #            This includes the ~1 ms batched release for quick taps.
-    #
-    #   _on_hold_event fires (_HOLD_CONFIRM ms after press, no release yet):
-    #            HOLD: start ramp (or dispatch if LED is off / no rampable lights).
-    #            Next hold within 5 s alternates ramp direction.
-    #
-    #   RELEASE (after hold timer fires / ramp active) → stop ramp.
-    _HOLD_CONFIRM       = 0.30   # seconds after PRESS before hold event fires
-    _HOLD_CONFIRM_CYCLE = 0.70   # longer window for entity_toggle+cycle_dim: taps run 450-600ms
-    # Bridge sometimes sends 3-5 duplicate press+release pairs within ~30 ms for
-    # a single physical press (radio re-transmit / batching).  Ignore new presses
-    # that arrive within this window after a dispatch.  Must be >> 30 ms but well
-    # below a deliberate double-tap (~300 ms).
-    _PRESS_DEBOUNCE     = 0.20   # seconds
-    _DOUBLE_TAP_WINDOW  = 0.40   # seconds — second press within this window triggers double_tap
-    _RAMP_STEP_PCT      = 10     # brightness % per ramp tick
-    _RAMP_INTERVAL      = 0.40   # seconds between ticks (also used as transition time)
-
-    _HOLD_ACTIONS = frozenset({
-        ACTION_ENTITY_TOGGLE, ACTION_SINGLE_ACTION, ACTION_STATEFUL_SCENE,
-        ACTION_RAISE, ACTION_LOWER, ACTION_LIGHT_CYCLE_DIM,
-    })
-
-    @callback
-    def _on_press(self, btn_num: int, btn_cfg: dict) -> None:
-        """Synchronous press handler."""
-        now = asyncio.get_event_loop().time()
-
-        # Discard bridge-duplicate presses that arrive within _PRESS_DEBOUNCE of
-        # the last dispatch (radio re-transmits arrive ~7-30 ms apart).
-        last_dispatch = self._last_dispatch_times.get(btn_num, 0)
-        if (now - last_dispatch) < self._PRESS_DEBOUNCE:
-            _LOGGER.debug(
-                "'%s': button %d press ignored — %.0fms since last dispatch (debounce)",
-                self.name, btn_num, (now - last_dispatch) * 1000,
-            )
-            return
-
-        old_confirm = self._confirm_handles.pop(btn_num, None)
-        if old_confirm is not None:
-            old_confirm.cancel()
-        old_ramp = self._ramp_tasks.pop(btn_num, None)
-        if old_ramp is not None and not old_ramp.done():
-            old_ramp.cancel()
-        last_press = self._last_press_times.get(btn_num, 0)
-        self._last_press_times[btn_num] = now
-
-        self._press_times[btn_num] = now
-        self._held[btn_num]        = False
-
-        # Double-tap detection: second press within window + double_tap block configured
-        v2_blocks        = btn_cfg.get("_v2_blocks", {})
-        double_tap_block = v2_blocks.get("double_tap", {})
-        if (
-            (now - last_press) < self._DOUBLE_TAP_WINDOW
-            and double_tap_block.get(CONF_ACTION_TYPE, ACTION_NONE) != ACTION_NONE
-        ):
-            _LOGGER.info(
-                "'%s': button %d DOUBLE TAP (%.3fs since last press)",
-                self.name, btn_num, now - last_press,
-            )
-            merged = self._merge_v2_block(btn_cfg, double_tap_block)
-            self.hass.async_create_task(self._dispatch(btn_num, merged))
-            return
-
-        action = btn_cfg.get(CONF_ACTION_TYPE)
-        hold_block = v2_blocks.get("hold", {})
-        has_custom_hold = (
-            hold_block.get(CONF_ACTION_TYPE, ACTION_NONE) != ACTION_NONE
-            and not btn_cfg.get("cycle_dim", False)
-        )
-        # cycle_dim=true on any button opts into hold-to-dim regardless of action type
-        wants_hold = action in self._HOLD_ACTIONS or btn_cfg.get("cycle_dim", False) or has_custom_hold
-        if not wants_hold:
-            self._last_dispatch_times[btn_num] = now
-            self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
-        else:
-            # Arm hold timer. entity_toggle+cycle_dim gets a longer window (700ms)
-            # because taps on this hardware arrive at 370-550ms — safely under 700ms
-            # so tap detection works without dispatching on press.
-            confirm_delay = (
-                self._HOLD_CONFIRM_CYCLE
-                if action == ACTION_ENTITY_TOGGLE and btn_cfg.get("cycle_dim", False)
-                else self._HOLD_CONFIRM
-            )
-            handle = self.hass.loop.call_later(
-                confirm_delay, self._on_hold_event, btn_num,
-            )
-            self._confirm_handles[btn_num] = handle
-
-    @callback
-    def _handle_release(self, btn_num: int) -> None:
-        """Synchronous release handler — drives the press/hold state machine.
-
-        For quick taps the bridge batches press+release (~1 ms apart).
-        For holds the bridge delays the release until physical lift.
-          - release before hold timer fires → TAP, cancel timer, dispatch
-          - hold timer fired first → HOLD was running; this release stops it
-        """
-        now     = asyncio.get_event_loop().time()
-        elapsed = now - self._press_times.get(btn_num, now)
-
-        _LOGGER.debug(
-            "'%s': button %d release elapsed=%.3fs held=%s confirm=%s",
-            self.name, btn_num, elapsed,
-            self._held.get(btn_num), btn_num in self._confirm_handles,
-        )
-
-        # ── Ramp is active: this release stops it ────────────────────────────
-        if self._held.get(btn_num, False):
-            ramp = self._ramp_tasks.pop(btn_num, None)
-            if ramp is not None and not ramp.done():
-                ramp.cancel()
-            self._held.pop(btn_num, None)
-            self._ramp_end_times[btn_num] = now
-            # If the ramp was cancelled within its first tick window (< RAMP_INTERVAL
-            # after the hold fired), the ramp coroutine may not have gotten CPU time
-            # to apply its first step.  For raise/lower, guarantee one step so a
-            # short hold always nudges brightness rather than silently doing nothing.
-            ramp_duration = elapsed - self._HOLD_CONFIRM
-            if ramp_duration < self._RAMP_INTERVAL:
-                btn_cfg = self._buttons.get(btn_num)
-                if btn_cfg is not None:
-                    action = btn_cfg.get(CONF_ACTION_TYPE)
-                    if action in (ACTION_RAISE, ACTION_LOWER):
-                        _LOGGER.debug(
-                            "'%s': button %d short hold (%.0fms in ramp) — dispatching single step",
-                            self.name, btn_num, ramp_duration * 1000,
-                        )
-                        self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
-            return
-
-        # ── Release before hold timer fired → confirmed TAP ─────────────────
-        confirm = self._confirm_handles.pop(btn_num, None)
-        if confirm is not None:
-            confirm.cancel()
-        btn_cfg = self._buttons.get(btn_num)
-        if btn_cfg is not None and confirm is not None:
-            _LOGGER.info(
-                "'%s': button %d TAP (elapsed=%.3fs)",
-                self.name, btn_num, elapsed,
-            )
-            self._last_dispatch_times[btn_num] = now
-            self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
-
-    @callback
-    def _on_hold_event(self, btn_num: int) -> None:
-        """Internal hold event — fires _HOLD_CONFIRM seconds after press with no
-        release in between.  Routes to ramp or dispatch based on context.
-        """
-        self._confirm_handles.pop(btn_num, None)
-
-        btn_cfg = self._buttons.get(btn_num)
-        if btn_cfg is None:
-            return
-
-        action    = btn_cfg.get(CONF_ACTION_TYPE)
-        cycle_dim = btn_cfg.get("cycle_dim", False)
-
-        # Custom hold action (v2): dispatch it instead of ramp when cycle_dim is off
-        v2_blocks  = btn_cfg.get("_v2_blocks", {})
-        hold_block = v2_blocks.get("hold", {})
-        if (
-            not cycle_dim
-            and hold_block.get(CONF_ACTION_TYPE, ACTION_NONE) != ACTION_NONE
-        ):
-            _LOGGER.info(
-                "'%s': button %d HOLD — dispatching custom hold action '%s'",
-                self.name, btn_num, hold_block.get(CONF_ACTION_TYPE),
-            )
-            self._held[btn_num] = True
-            merged = self._merge_v2_block(btn_cfg, hold_block)
-            self.hass.async_create_task(self._dispatch(btn_num, merged))
-            return
-
-        if action == ACTION_RAISE:
-            direction = "up"
-            entities  = self._get_last_ramp_lights()
-        elif action == ACTION_LOWER:
-            direction = "down"
-            entities  = self._get_last_ramp_lights()
-        elif action == ACTION_LIGHT_CYCLE_DIM or cycle_dim:
-            # Hold → ramp the button's own assigned lights continuously
-            entities  = self._get_btn_light_entities(btn_cfg)
-            direction = self._next_ramp_dir(btn_num, entities)
-            _LOGGER.info(
-                "'%s': button %d HOLD — cycle_dim ramp %s on %s",
-                self.name, btn_num, direction, entities,
-            )
-        else:
-            # entity_toggle / stateful_scene: only ramp when LED is currently ON
-            if not self._is_btn_led_on(btn_num):
-                _LOGGER.debug(
-                    "'%s': button %d hold event — LED off, dispatching instead",
-                    self.name, btn_num,
-                )
-                # Mark held so the eventual real-release won't dispatch a second time.
-                self._held[btn_num] = True
-                self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
-                return
-
-            entities  = self._get_btn_light_entities(btn_cfg)
-            direction = self._next_ramp_dir(btn_num, entities)
-
-        if not entities:
-            _LOGGER.debug(
-                "'%s': button %d hold event — no rampable lights, dispatching",
-                self.name, btn_num,
-            )
-            self._held[btn_num] = True
-            self.hass.async_create_task(self._dispatch(btn_num, btn_cfg))
-            return
-
-        _LOGGER.info(
-            "'%s': button %d HOLD EVENT — ramp %s on %s",
-            self.name, btn_num, direction, entities,
-        )
-        self._held[btn_num] = True
-        task = self.hass.async_create_task(
-            self._ramp_loop(btn_num, entities, direction)
-        )
-        self._ramp_tasks[btn_num] = task
-
-    async def _ramp_loop(
-        self,
-        btn_num: int,
-        entities: list[str],
-        direction: str,
-    ) -> None:
-        """Step brightness up/down until cancelled by _handle_release."""
-        try:
-            while True:
-                all_at_limit = True
-                for eid in entities:
-                    state = self.hass.states.get(eid)
-                    if state is None:
-                        continue
-                    if state.state == "off":
-                        if direction == "up":
-                            await self.hass.services.async_call(
-                                "light", SERVICE_TURN_ON,
-                                {ATTR_ENTITY_ID: eid, "brightness_pct": 1},
-                                blocking=False,
-                            )
-                            all_at_limit = False
-                        continue
-                    current_pct = round(
-                        (state.attributes.get("brightness", 0) or 0) / 255 * 100
-                    )
-                    new_pct = (
-                        min(100, current_pct + self._RAMP_STEP_PCT)
-                        if direction == "up"
-                        else max(0, current_pct - self._RAMP_STEP_PCT)
-                    )
-                    if new_pct == current_pct:
-                        continue
-                    all_at_limit = False
-                    if direction == "down" and new_pct <= 0:
-                        await self.hass.services.async_call(
-                            "light", SERVICE_TURN_OFF,
-                            {ATTR_ENTITY_ID: eid}, blocking=False,
-                        )
-                    else:
-                        await self.hass.services.async_call(
-                            "light", SERVICE_TURN_ON,
-                            {
-                                ATTR_ENTITY_ID: eid,
-                                "brightness_pct": new_pct,
-                                "transition": self._RAMP_INTERVAL,
-                            },
-                            blocking=False,
-                        )
-                if all_at_limit:
-                    break
-                await asyncio.sleep(self._RAMP_INTERVAL)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self._ramp_tasks.pop(btn_num, None)
-
-    # ── Ramp helpers ──────────────────────────────────────────────────────────
-
-    _RAMP_DIR_RESET_WINDOW = 5.0  # seconds — gap longer than this resets direction
-
-    def _next_ramp_dir(self, btn_num: int, entities: list[str] | None = None) -> str:
-        """Return next ramp direction, cycling on repeated holds within the reset window.
-
-        Fresh start (first hold, or gap > 5 s): default "up", unless every
-        rampable light is already at 100% — in that case default "down".
-        """
-        now = asyncio.get_event_loop().time()
-        last_end = self._ramp_end_times.get(btn_num)
-        if last_end is None or (now - last_end) > self._RAMP_DIR_RESET_WINDOW:
-            if entities and all(self._light_at_max(e) for e in entities):
-                direction = "down"
-            else:
-                direction = "up"
-        else:
-            last_dir = self._ramp_dirs.get(btn_num, "down")
-            direction = "up" if last_dir == "down" else "down"
-        self._ramp_dirs[btn_num] = direction
-        return direction
-
-    def _light_at_max(self, eid: str) -> bool:
-        state = self.hass.states.get(eid)
-        if state is None or state.state != "on":
-            return False
-        return round((state.attributes.get("brightness", 0) or 0) / 255 * 100) >= 99
-
-    def _is_btn_led_on(self, btn_num: int) -> bool:
-        sw = self._button_switches.get(btn_num)
-        if sw is not None:
-            return bool(sw.is_on)
-        led = self._get_led_entity(btn_num)
-        if led:
-            st = self.hass.states.get(led)
-            return st is not None and st.state == "on"
-        return False
-
-    def _merge_v2_block(self, btn_cfg: dict, block: dict) -> dict:
-        """Return a dispatch-ready config merging btn_cfg with a v2 sub-block (double_tap/hold)."""
-        merged = dict(btn_cfg)
-        merged[CONF_ACTION_TYPE]    = block.get(CONF_ACTION_TYPE, ACTION_NONE)
-        raw_target                  = block.get(CONF_ACTION_TARGET, "")
-        merged[CONF_ACTION_TARGET]  = _normalize_action_target(raw_target, merged[CONF_ACTION_TYPE])
-        merged[CONF_ENTITY_SETTINGS] = block.get(CONF_ENTITY_SETTINGS, {})
-        if block.get(CONF_TARGET_BRIGHTNESS):
-            merged[CONF_TARGET_BRIGHTNESS] = int(block[CONF_TARGET_BRIGHTNESS])
-        if block.get(CONF_TARGET_COLOR_TEMP):
-            merged[CONF_TARGET_COLOR_TEMP] = int(block[CONF_TARGET_COLOR_TEMP])
-        if block.get("scene_group"):
-            merged["scene_group"] = block["scene_group"]
-        return merged
-
-    def _get_btn_light_entities(self, btn_cfg: dict) -> list[str]:
-        """Return light entity_ids rampable for this button's action."""
-        action = btn_cfg.get(CONF_ACTION_TYPE)
-        if action in (ACTION_ENTITY_TOGGLE, ACTION_SINGLE_ACTION, ACTION_LIGHT_CYCLE_DIM):
-            return [
-                e for e in _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
-                if e.startswith("light.")
-            ]
-        if action == ACTION_STATEFUL_SCENE:
-            scene_id = btn_cfg.get(CONF_ACTION_TARGET, "")
-            st = self.hass.states.get(scene_id) if scene_id else None
-            if st:
-                return [
-                    e for e in st.attributes.get("entity_id", [])
-                    if e.startswith("light.")
-                ]
-        # cycle_dim checkbox on other action types: pull from action_target if it's lights
-        if btn_cfg.get("cycle_dim", False):
-            return [
-                e for e in _normalize_targets(btn_cfg.get(CONF_ACTION_TARGET, []))
-                if e.startswith("light.")
-            ]
-        return []
-
-    def _scene_light_entities(self, scene_id: str) -> list[str]:
-        """Return light entity_ids that belong to an HA scene."""
-        state = self.hass.states.get(scene_id)
-        if state is None:
-            return []
-        return [e for e in state.attributes.get("entity_id", []) if e.startswith("light.")]
-
-    def _get_last_ramp_lights(self) -> list[str]:
-        """Return light entities from the most recent action (for raise/lower ramp)."""
-        if self._last_action is None:
-            return []
-        entities = self._last_action.get("entities", [])
-        if entities:
-            return [e for e in entities if e.startswith("light.")]
-        # Fallback for scene-type actions that didn't store entities directly
-        action_type = self._last_action.get("type")
-        if action_type in (ACTION_STATEFUL_SCENE, ACTION_HA_SCENE):
-            scene_id = self._last_action.get("scene_id", "")
-            return self._scene_light_entities(scene_id) if scene_id else []
-        return []
-
-    # ── Dispatch ──────────────────────────────────────────────────────────────
-
-    async def _dispatch(self, btn_num: int, btn_cfg: dict) -> None:
-        action = btn_cfg[CONF_ACTION_TYPE]
-        target = btn_cfg.get(CONF_ACTION_TARGET)
-        params = btn_cfg.get(CONF_ACTION_PARAMS, {})
-
-        if action == ACTION_NONE:
-            return
-
-        elif action == ACTION_HA_SCENE:
-            await self._activate_scene(target)
-            await self._write_led_entity(btn_num, True)
-            self._last_action = {"type": ACTION_HA_SCENE, "scene_id": target}
-
-        elif action == ACTION_STATEFUL_SCENE:
-            # LED writes handled inside _activate_stateful_scene
-            await self._activate_stateful_scene(btn_num, btn_cfg, target)
-
-        elif action == ACTION_AUTOMATION:
-            await self._trigger_automation(target)
-            await self._write_led_entity(btn_num, True)
-
-        elif action == ACTION_SCRIPT:
-            await self._run_script(target, params)
-            await self._write_led_entity(btn_num, True)
-
-        elif action == ACTION_ENTITY_TOGGLE:
-            entity_ids = _normalize_targets(target)
-            global_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
-            global_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
-            entity_settings_map: dict = btn_cfg.get(CONF_ENTITY_SETTINGS, {})
-            led_mode   = btn_cfg.get(CONF_LED_MODE, LED_MODE_ROOM)
-
-            v2_blocks_et     = btn_cfg.get("_v2_blocks", {})
-            off_level_block  = v2_blocks_et.get("off_level", {})
-            off_level_ent    = off_level_block.get("entity_settings", {})
-
-            if led_mode == LED_MODE_SCENE:
-                # Scene Mode: toggle axis is whether the scene is currently active
-                # (LED state), NOT whether the entity is physically on.
-                # Lights on but at wrong level → LED off → button must ACTIVATE
-                # the scene, not turn everything off.
-                if self._is_btn_led_on(btn_num):
-                    # Scene active → deactivate: turn off or apply off-level brightness
-                    _LOGGER.info(
-                        "'%s': button %d PRESS OFF (scene mode) — LED was ON, applying off_level to %s",
-                        self.name, btn_num, entity_ids,
-                    )
-                    for eid in entity_ids:
-                        domain     = eid.split(".")[0]
-                        off_ent    = off_level_ent.get(eid, {})
-                        off_bri    = int(off_ent.get("brightness") or 0)
-                        if domain == "light" and off_bri > 0:
-                            _LOGGER.info(
-                                "'%s': button %d  → %s dim to %d%%",
-                                self.name, btn_num, eid, off_bri,
-                            )
-                            await self.hass.services.async_call(
-                                "light", SERVICE_TURN_ON,
-                                {ATTR_ENTITY_ID: eid, "brightness_pct": off_bri},
-                                blocking=True,
-                            )
-                        else:
-                            _LOGGER.info(
-                                "'%s': button %d  → %s turn OFF",
-                                self.name, btn_num, eid,
-                            )
-                            await self.hass.services.async_call(
-                                domain, SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid},
-                                blocking=True,
-                            )
-                    self._last_action = {"type": ACTION_ENTITY_TOGGLE, "entities": entity_ids}
-                    await self._write_led_entity(btn_num, False)
-                else:
-                    # Scene not active → activate: apply per-entity target settings.
-                    # LED is NOT written here — entity tracking sets it ON once the
-                    # light actually reaches the target level.
-                    _LOGGER.info(
-                        "'%s': button %d PRESS ON (scene mode) — LED was OFF, activating scene on %s",
-                        self.name, btn_num, entity_ids,
-                    )
-                    for eid in entity_ids:
-                        if eid.startswith("light."):
-                            ent_cfg  = entity_settings_map.get(eid, {})
-                            ent_bri  = int(ent_cfg.get("brightness") or global_bri)
-                            ent_cct  = int(ent_cfg.get("color_temp") or global_cct)
-                            ent_hs   = ent_cfg.get("hs_color")
-                            ent_fade = float(ent_cfg.get("fade") or 0)
-                            ent_dly  = float(ent_cfg.get("delay") or 0)
-                            _LOGGER.info(
-                                "'%s': button %d  → %s bri=%d%% cct=%dK fade=%.1fs",
-                                self.name, btn_num, eid, ent_bri, ent_cct, ent_fade,
-                            )
-                            await self._apply_light_settings(
-                                eid, ent_bri, ent_cct, ent_hs, ent_fade, ent_dly
-                            )
-                        else:
-                            domain = eid.split(".")[0]
-                            await self.hass.services.async_call(
-                                domain, SERVICE_TURN_ON, {ATTR_ENTITY_ID: eid},
-                                blocking=True,
-                            )
-                    self._last_action = {"type": ACTION_ENTITY_TOGGLE, "entities": entity_ids}
-
-            else:
-                # Room Mode: standard pre_on toggle logic.
-                # Read state BEFORE toggling — HA state propagation is async even
-                # with blocking=True, so reading after the call returns the old value.
-                pre_on = False
-                if entity_ids:
-                    pre_state = self.hass.states.get(entity_ids[0])
-                    pre_on = pre_state is not None and pre_state.state not in (
-                        "off", "closed", "unavailable", "unknown", "none"
-                    )
-                has_any_target = any(
-                    int(entity_settings_map.get(eid, {}).get("brightness") or global_bri) > 0
-                    or int(entity_settings_map.get(eid, {}).get("color_temp") or global_cct) > 0
-                    or bool(entity_settings_map.get(eid, {}).get("hs_color"))
-                    for eid in entity_ids if eid.startswith("light.")
-                ) if entity_ids else False
-                if not pre_on and has_any_target:
-                    # Off + targets configured → turn on at per-entity target state
-                    for eid in entity_ids:
-                        if eid.startswith("light."):
-                            ent_cfg  = entity_settings_map.get(eid, {})
-                            ent_bri  = int(ent_cfg.get("brightness") or global_bri)
-                            ent_cct  = int(ent_cfg.get("color_temp") or global_cct)
-                            ent_hs   = ent_cfg.get("hs_color")
-                            ent_fade = float(ent_cfg.get("fade") or 0)
-                            ent_dly  = float(ent_cfg.get("delay") or 0)
-                            await self._apply_light_settings(
-                                eid, ent_bri, ent_cct, ent_hs, ent_fade, ent_dly
-                            )
-                        else:
-                            domain = eid.split(".")[0]
-                            await self.hass.services.async_call(
-                                domain, SERVICE_TURN_ON, {ATTR_ENTITY_ID: eid},
-                                blocking=True,
-                            )
-                    self._last_action = {"type": ACTION_ENTITY_TOGGLE, "entities": entity_ids}
-                    await self._write_led_entity(btn_num, True)
-                elif pre_on and off_level_ent:
-                    # Was on → apply off-level (per-entity) instead of plain toggle
-                    for eid in entity_ids:
-                        domain  = eid.split(".")[0]
-                        off_ent = off_level_ent.get(eid, {})
-                        off_bri = int(off_ent.get("brightness") or 0)
-                        if domain == "light" and off_bri > 0:
-                            await self.hass.services.async_call(
-                                "light", SERVICE_TURN_ON,
-                                {ATTR_ENTITY_ID: eid, "brightness_pct": off_bri},
-                                blocking=True,
-                            )
-                        else:
-                            await self.hass.services.async_call(
-                                domain, SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid},
-                                blocking=True,
-                            )
-                    self._last_action = {"type": ACTION_ENTITY_TOGGLE, "entities": entity_ids}
-                    await self._write_led_entity(btn_num, False)
-                else:
-                    await self._entity_toggle(target)
-                    await self._write_led_entity(btn_num, not pre_on)
-
-        elif action == ACTION_SINGLE_ACTION:
-            entity_ids = _normalize_targets(target)
-            global_bri = int(btn_cfg.get(CONF_TARGET_BRIGHTNESS) or 0)
-            global_cct = int(btn_cfg.get(CONF_TARGET_COLOR_TEMP) or 0)
-            entity_settings_map: dict = btn_cfg.get(CONF_ENTITY_SETTINGS, {})
-            _LOGGER.info(
-                "'%s': button %d SINGLE ACTION — activating %s",
-                self.name, btn_num, entity_ids,
-            )
-            for eid in entity_ids:
-                if eid.startswith("light."):
-                    ent_cfg  = entity_settings_map.get(eid, {})
-                    ent_bri  = int(ent_cfg.get("brightness") or global_bri)
-                    ent_cct  = int(ent_cfg.get("color_temp") or global_cct)
-                    ent_hs   = ent_cfg.get("hs_color")
-                    ent_fade = float(ent_cfg.get("fade") or 0)
-                    ent_dly  = float(ent_cfg.get("delay") or 0)
-                    await self._apply_light_settings(eid, ent_bri, ent_cct, ent_hs, ent_fade, ent_dly)
-                else:
-                    domain = eid.split(".")[0]
-                    await self.hass.services.async_call(
-                        domain, SERVICE_TURN_ON, {ATTR_ENTITY_ID: eid}, blocking=True,
-                    )
-            self._last_action = {"type": ACTION_SINGLE_ACTION, "entities": entity_ids}
-
-        elif action == ACTION_COVER_CYCLE:
-            await self._cover_cycle(btn_num, target)
-
-        elif action == ACTION_LIGHT_CYCLE_DIM:
-            levels = params.get("levels", DIM_CYCLE_LEVELS)
-            await self._light_cycle_dim(btn_num, target, levels)
-
-        elif action == ACTION_RAISE:
-            await self._raise(params)
-
-        elif action == ACTION_LOWER:
-            await self._lower(params)
-
-        else:
-            _LOGGER.error("'%s': unknown action_type '%s'", self.name, action)
-            return
-
-        if self._last_action is not None and action not in (ACTION_RAISE, ACTION_LOWER):
-            self._last_action["button"] = btn_num
-        self._notify_state_sensors()
-
-    # ── Action implementations ────────────────────────────────────────────────
-
-    async def _apply_light_settings(
-        self,
-        eid: str,
-        bri: int,
-        cct: int,
-        hs_color: Any = None,
-        fade: float = 0,
-        delay: float = 0,
-    ) -> None:
-        """Call light.turn_on with brightness, CCT, and/or color.
-
-        Some tunable-white fixtures (e.g., Lumaris via Caseta) ignore brightness_pct
-        when color_temp_kelvin is included in the same call because CCT and level travel
-        on separate LEAP command paths.  Sending them as two sequential blocking calls
-        — CCT first, then brightness — ensures both are applied regardless of firmware.
-        """
-        if delay > 0:
-            await asyncio.sleep(delay)
-        if bri > 0 and cct > 0:
-            # CCT call — turns the light on at the target colour temperature
-            cct_data: dict[str, Any] = {ATTR_ENTITY_ID: eid, "color_temp_kelvin": cct}
-            if fade > 0:
-                cct_data["transition"] = fade
-            await self.hass.services.async_call("light", SERVICE_TURN_ON, cct_data, blocking=True)
-            # Brightness call — corrects any level reset caused by the CCT command
-            bri_data: dict[str, Any] = {ATTR_ENTITY_ID: eid, "brightness_pct": bri}
-            if fade > 0:
-                bri_data["transition"] = fade
-            await self.hass.services.async_call("light", SERVICE_TURN_ON, bri_data, blocking=True)
-        else:
-            svc_data: dict[str, Any] = {ATTR_ENTITY_ID: eid}
-            if bri > 0:
-                svc_data["brightness_pct"] = bri
-            if cct > 0:
-                svc_data["color_temp_kelvin"] = cct
-            if hs_color:
-                svc_data["hs_color"] = hs_color
-            if fade > 0:
-                svc_data["transition"] = fade
-            await self.hass.services.async_call("light", SERVICE_TURN_ON, svc_data, blocking=True)
-
-    async def _activate_scene(self, scene_id: str) -> None:
-        """Activate a plain HA scene."""
-        await self.hass.services.async_call(
-            "scene", "turn_on", {ATTR_ENTITY_ID: scene_id}, blocking=True
-        )
-        _LOGGER.debug("Scene activated: %s", scene_id)
-
-    async def _activate_stateful_scene(
-        self, btn_num: int, btn_cfg: dict, scene_id: str
-    ) -> None:
-        """Activate an HA scene and update stateful tracking + LEDs."""
-        await self._activate_scene(scene_id)
-
-        self._active_scene_btn = btn_num
-
-        group = btn_cfg.get("scene_group") or self.scene_group
-        if group:
-            _SCENE_GROUPS[group] = btn_num
-
-        # Buttons without LED entity binding: update HA switch state directly
-        await self._sync_leds(btn_num)
-        # Buttons with LED entity binding: write to physical LED (triggers _handle_led_state_change)
-        await self._write_group_leds(btn_num, btn_cfg)
-
-        self._last_action = {
-            "type": ACTION_STATEFUL_SCENE,
-            "scene_id": scene_id,
-            "button": btn_num,
-        }
-        _LOGGER.debug("Stateful scene '%s' activated on btn %d", scene_id, btn_num)
-
-    async def _trigger_automation(self, automation_id: str) -> None:
-        """Trigger an HA automation."""
-        await self.hass.services.async_call(
-            "automation",
-            "trigger",
-            {ATTR_ENTITY_ID: automation_id, "skip_condition": True},
-            blocking=True,
-        )
-        self._last_action = {"type": ACTION_AUTOMATION, "id": automation_id}
-
-    async def _run_script(self, script_id: str, params: dict) -> None:
-        """Run an HA script with optional variables."""
-        service_data: dict[str, Any] = {ATTR_ENTITY_ID: script_id}
-        if "variables" in params:
-            service_data["variables"] = params["variables"]
-        await self.hass.services.async_call(
-            "script", "turn_on", service_data, blocking=False
-        )
-        self._last_action = {"type": ACTION_SCRIPT, "id": script_id}
-
-    async def _entity_toggle(self, targets: Any) -> None:
-        """Toggle one or more entities."""
-        entity_ids = _normalize_targets(targets)
-        for eid in entity_ids:
-            domain = eid.split(".")[0]
-            await self.hass.services.async_call(
-                domain, SERVICE_TOGGLE, {ATTR_ENTITY_ID: eid}, blocking=True
-            )
-        self._last_action = {"type": ACTION_ENTITY_TOGGLE, "entities": entity_ids}
-
-    async def _cover_cycle(self, btn_num: int, targets: Any) -> None:
-        """Cycle a cover: open → stop → close → open ..."""
-        entity_ids = _normalize_targets(targets)
-        current = self._cover_states.get(btn_num, COVER_STATE_CLOSE)
-
-        if current == COVER_STATE_CLOSE:
-            next_state = COVER_STATE_OPEN
-            service = "open_cover"
-        elif current == COVER_STATE_OPEN:
-            next_state = COVER_STATE_STOP
-            service = "stop_cover"
-        else:  # STOP
-            next_state = COVER_STATE_CLOSE
-            service = "close_cover"
-
-        self._cover_states[btn_num] = next_state
-        await self.hass.services.async_call(
-            "cover", service, {ATTR_ENTITY_ID: entity_ids}, blocking=True
-        )
-        self._last_action = {
-            "type": ACTION_COVER_CYCLE,
-            "entities": entity_ids,
-            "state": next_state,
-        }
-        _LOGGER.debug("Cover cycle: %s → %s on %s", current, next_state, entity_ids)
-
-    async def _light_cycle_dim(
-        self, btn_num: int, targets: Any, levels: list[int]
-    ) -> None:
-        """Cycle a light through dim levels, then off."""
-        entity_ids = _normalize_targets(targets)
-        idx = self._light_dim_indices.get(btn_num, len(levels))  # start past end = off state
-
-        if idx >= len(levels):
-            # Currently off (or past last level) → turn on at first level
-            idx = 0
-        else:
-            idx += 1
-
-        if idx >= len(levels):
-            # Past the last level → turn off
-            await self.hass.services.async_call(
-                "light", SERVICE_TURN_OFF, {ATTR_ENTITY_ID: entity_ids}, blocking=True
-            )
-            self._light_dim_indices[btn_num] = len(levels)  # mark as off
-            self._last_action = {
-                "type": ACTION_LIGHT_CYCLE_DIM,
-                "entities": entity_ids,
-                "brightness": 0,
-            }
-            _LOGGER.debug("Light cycle: turned off %s", entity_ids)
-        else:
-            brightness_pct = levels[idx]
-            brightness_255 = int(brightness_pct / 100 * 255)
-            await self.hass.services.async_call(
-                "light",
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: entity_ids, "brightness": brightness_255},
-                blocking=True,
-            )
-            self._light_dim_indices[btn_num] = idx
-            self._last_action = {
-                "type": ACTION_LIGHT_CYCLE_DIM,
-                "entities": entity_ids,
-                "brightness": brightness_pct,
-            }
-            _LOGGER.debug("Light cycle: %s → %d%%", entity_ids, brightness_pct)
-
-    def _last_action_light_entities(self) -> list[str]:
-        """Resolve light entities from the last action regardless of action type."""
-        if self._last_action is None:
-            return []
-        entities = self._last_action.get("entities", [])
-        if entities:
-            return [e for e in entities if e.startswith("light.")]
-        action_type = self._last_action.get("type")
-        if action_type in (ACTION_STATEFUL_SCENE, ACTION_HA_SCENE):
-            scene_id = self._last_action.get("scene_id", "")
-            return self._scene_light_entities(scene_id) if scene_id else []
-        return []
-
-    async def _raise(self, params: dict) -> None:
-        """Raise shades or brighten lights based on last action context."""
-        if self._last_action is None:
-            _LOGGER.debug("'%s': RAISE pressed but no prior context", self.name)
-            return
-
-        last = self._last_action
-        action_type = last.get("type")
-        entities = last.get("entities", [])
-
-        if action_type == ACTION_COVER_CYCLE or _entities_are_covers(entities):
-            await self.hass.services.async_call(
-                "cover", "open_cover", {ATTR_ENTITY_ID: entities}, blocking=True
-            )
-            for btn, cfg in self._buttons.items():
-                if cfg.get(CONF_ACTION_TYPE) == ACTION_COVER_CYCLE and cfg.get(CONF_ACTION_TARGET):
-                    tgts = _normalize_targets(cfg[CONF_ACTION_TARGET])
-                    if any(t in entities for t in tgts):
-                        self._cover_states[btn] = COVER_STATE_OPEN
-        else:
-            lights = self._last_action_light_entities()
-            if lights:
-                await self._adjust_light_brightness(lights, +RAISE_LOWER_STEP)
-            else:
-                _LOGGER.debug("'%s': RAISE — no applicable entities from last action", self.name)
-
-    async def _lower(self, params: dict) -> None:
-        """Lower shades or dim lights based on last action context."""
-        if self._last_action is None:
-            _LOGGER.debug("'%s': LOWER pressed but no prior context", self.name)
-            return
-
-        last = self._last_action
-        action_type = last.get("type")
-        entities = last.get("entities", [])
-
-        if action_type == ACTION_COVER_CYCLE or _entities_are_covers(entities):
-            await self.hass.services.async_call(
-                "cover", "close_cover", {ATTR_ENTITY_ID: entities}, blocking=True
-            )
-            for btn, cfg in self._buttons.items():
-                if cfg.get(CONF_ACTION_TYPE) == ACTION_COVER_CYCLE and cfg.get(CONF_ACTION_TARGET):
-                    tgts = _normalize_targets(cfg[CONF_ACTION_TARGET])
-                    if any(t in entities for t in tgts):
-                        self._cover_states[btn] = COVER_STATE_CLOSE
-        else:
-            lights = self._last_action_light_entities()
-            if lights:
-                await self._adjust_light_brightness(lights, -RAISE_LOWER_STEP)
-            else:
-                _LOGGER.debug("'%s': LOWER — no applicable entities from last action", self.name)
-
-    async def _adjust_light_brightness(
-        self, entities: list[str], delta_pct: int
-    ) -> None:
-        """Adjust brightness of lights by delta_pct (positive = brighter)."""
-        for eid in entities:
-            state = self.hass.states.get(eid)
-            if state is None:
-                continue
-            domain = eid.split(".")[0]
-            if domain != "light":
-                continue
-
-            current_brightness = state.attributes.get("brightness", 0) or 0
-            current_pct = round(current_brightness / 255 * 100)
-            new_pct = max(0, min(100, current_pct + delta_pct))
-            new_brightness = int(new_pct / 100 * 255)
-
-            if new_brightness <= 0:
-                await self.hass.services.async_call(
-                    "light", SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid}, blocking=True
-                )
-            else:
-                await self.hass.services.async_call(
-                    "light",
-                    SERVICE_TURN_ON,
-                    {ATTR_ENTITY_ID: eid, "brightness": new_brightness},
-                    blocking=True,
-                )
-            _LOGGER.debug(
-                "Brightness adjust %s: %d%% → %d%%", eid, current_pct, new_pct
-            )
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _normalize_targets(targets: Any) -> list[str]:
-    """Return a flat list of entity_id strings from scalar, comma-separated, or list target."""
-    if targets is None:
-        return []
-    if isinstance(targets, str):
-        if not targets:
-            return []
-        if "," in targets:
-            return [t.strip() for t in targets.split(",") if t.strip()]
-        return [targets]
-    if isinstance(targets, (list, tuple)):
-        return [str(t) for t in targets if t]
-    return [str(targets)]
-
-
-def _entities_are_covers(entities: list[str]) -> bool:
-    """Return True if any entity in the list is a cover."""
-    return any(e.startswith("cover.") for e in entities)
+	def __init__(A,hass,config,config_entry=_A):
+		C=config_entry;B=config;A.hass=hass;A.name=B[_K];A.serial=str(B.get(CONF_DEVICE_SERIAL,'')).strip();A.device_id=str(B.get(_E,'')).strip();A.device_name=B.get(CONF_DEVICE_NAME,'').strip().lower();A.area_name=B.get(CONF_AREA_NAME,'').strip().lower();A.keypad_type=B.get(CONF_KEYPAD_TYPE,_s);A.scene_group=B.get(_L,'').strip();A._config_entry=C;A._buttons={}
+		for D in B.get(CONF_BUTTONS,[]):A._buttons[D[CONF_BUTTON_NUMBER]]=D
+		A._active_scene_btn=_A;A._last_action=_A;A._cover_states={};A._light_dim_indices={};A._unsubscribe=_A;A._led_map={};A._button_switches={};A._leap_btn_map={}
+		if C is not _A:E=C.data.get(_k,{});A._leap_btn_map={int(A):B for(A,B)in E.items()}
+		A._press_times={};A._last_press_times={};A._last_dispatch_times={};A._held={};A._confirm_handles={};A._ramp_tasks={};A._ramp_dirs={};A._ramp_end_times={};A._state_sensors=[];A._entity_tracking_unsubs=[]
+	@callback
+	def async_register(self):A=self;A._unsubscribe=A.hass.bus.async_listen(LUTRON_EVENT,A._handle_event);_LOGGER.info("Lutron Keypad Controller '%s' registered (serial=%s)",A.name,A.serial)
+	@callback
+	def async_unregister(self):
+		A=self
+		for B in A._entity_tracking_unsubs:B()
+		A._entity_tracking_unsubs.clear()
+		if A._unsubscribe is not _A:A._unsubscribe();A._unsubscribe=_A;_LOGGER.debug("Lutron Keypad Controller '%s' unregistered",A.name)
+		for C in A._confirm_handles.values():C.cancel()
+		A._confirm_handles.clear()
+		for D in A._ramp_tasks.values():D.cancel()
+		A._ramp_tasks.clear();A._press_times.clear();A._last_dispatch_times.clear();A._held.clear();A._ramp_end_times.clear()
+	async def _build_leap_btn_map(A):
+		if A._leap_btn_map:_LOGGER.debug("'%s': _build_leap_btn_map — using stored map %s",A.name,A._leap_btn_map);return
+		E=_C
+		for I in _iter_lutron_bridges(A.hass):
+			E=_B;F=getattr(I,'button_devices',_A)or{}
+			if not F:continue
+			C=0
+			for B in F.values():
+				J=str(B.get(_J,''));K=str(B.get(_E,''))
+				if J!=A.serial and K!=A.device_id:continue
+				C+=1;D=_A
+				for L in(_Z,_a):
+					G=B.get(L)
+					if G is not _A:
+						try:D=int(G);break
+						except(TypeError,ValueError):pass
+				H=B.get(_a)
+				if D is not _A and H is not _A:
+					try:A._leap_btn_map[int(H)]=D
+					except(TypeError,ValueError):pass
+			if C>0:_LOGGER.debug("'%s': _build_leap_btn_map — matched %d entries on bridge, map=%s",A.name,C,A._leap_btn_map);return
+		if not E:_LOGGER.warning("'%s': _build_leap_btn_map — no lutron_caseta bridge found; raise/lower LEAP remapping unavailable.",A.name)
+		else:_LOGGER.debug("'%s': _build_leap_btn_map — no bridge had this serial in button_devices (expected for Caseta Pro).",A.name)
+	async def async_initialize(A):
+		if A._config_entry is _A:return
+		await A._build_leap_btn_map();B=await _find_led_entities_by_button_entities(A.hass,A._config_entry)
+		if not B:_LOGGER.debug("'%s': button-entity LED discovery found nothing — trying registry scan",A.name);B=await _find_led_entities(A.hass,A._config_entry)
+		if B:A._led_map=_normalize_led_map(B,A._config_entry);_LOGGER.warning("'%s': LED map ready (keys = sequential button numbers): %s",A.name,A._led_map)
+		else:_LOGGER.debug("'%s': no LED entities found (expected for CASETA Pro keypads without LED feedback). Call debug_leds service to diagnose.",A.name)
+		A._setup_entity_state_tracking()
+	def _get_led_entity(A,btn_num):B=btn_num;C=A._buttons.get(B,{}).get(CONF_LED_ENTITY,'');return C if C else A._led_map.get(B)
+	def register_button_switch(A,btn_num,switch):
+		B=btn_num;A._button_switches[B]=switch;C=A._buttons.get(B,{});E=C.get(CONF_ACTION_TYPE);D=_normalize_targets(C.get(CONF_ACTION_TARGET,[]))
+		if D:
+			if E==ACTION_ENTITY_TOGGLE:A._update_entity_toggle_led(B,C,D)
+			elif E==ACTION_SINGLE_ACTION:A._update_scene_mode_led(B,D)
+	@callback
+	def _update_entity_toggle_led(self,btn_num,btn_cfg,entities):
+		C=entities;B=btn_num;A=self;D=btn_cfg.get(CONF_LED_MODE,LED_MODE_ROOM)
+		if D==LED_MODE_SCENE:A._update_scene_mode_led(B,C)
+		elif D==LED_MODE_PATHWAY:A._update_pathway_mode_led(B,C)
+		else:A._update_room_mode_led(B,C)
+	@callback
+	def _update_room_mode_led(self,btn_num,entities):B=btn_num;A=self;C=any((D:=A.hass.states.get(B))is not _A and D.state not in(_f,_o,_p,_c,_b)for B in entities);A._update_button_switch_state(B,C);A.hass.async_create_task(A._write_led_entity(B,C))
+	@callback
+	def _update_pathway_mode_led(self,btn_num,entities):C=entities;B=btn_num;A=self;D=bool(C)and all((E:=A.hass.states.get(B))is not _A and E.state not in(_f,_o,_p,_c,_b)for B in C);A._update_button_switch_state(B,D);A.hass.async_create_task(A._write_led_entity(B,D))
+	@callback
+	def _update_scene_mode_led(self,btn_num,entities):
+		D=entities;B=btn_num;A=self;C=A._buttons.get(B,{});I=int(C.get(CONF_TARGET_BRIGHTNESS)or 0);J=int(C.get(CONF_TARGET_COLOR_TEMP)or 0);K=C.get(CONF_ENTITY_SETTINGS,{})
+		def F(eid):
+			D=eid;B=A.hass.states.get(D)
+			if B is _A or B.state in(_f,_o,_p,_c,_b):return _C
+			if not D.startswith(_N):return _B
+			E=K.get(D,{});F=int(E.get(_G)or I);G=int(E.get(_S)or J)
+			if F>0:
+				L=round((B.attributes.get(_G,0)or 0)/255*100)
+				if abs(L-F)>5:return _C
+			if G>0:
+				C=B.attributes.get(_A4)
+				if C is _A:
+					H=B.attributes.get(_S)
+					if H:C=round(1000000/H)
+				if C is not _A and abs(int(C)-G)>100:return _C
+			return _B
+		E=bool(D)and all(F(A)for A in D);A._update_button_switch_state(B,E);A.hass.async_create_task(A._write_led_entity(B,E))
+	def _setup_entity_state_tracking(A):
+		for C in A._entity_tracking_unsubs:C()
+		A._entity_tracking_unsubs.clear()
+		for(D,E)in A._buttons.items():
+			F=E.get(CONF_ACTION_TYPE)
+			if F not in(ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION):continue
+			B=_normalize_targets(E.get(CONF_ACTION_TARGET,[]))
+			if not B:continue
+			if F==ACTION_SINGLE_ACTION:
+				@callback
+				def G(event,_btn=D,_ents=B):A._update_scene_mode_led(_btn,_ents)
+				C=async_track_state_change_event(A.hass,B,G);A._entity_tracking_unsubs.append(C);_LOGGER.debug("'%s': button %d: single_action scene LED tracking %s",A.name,D,B)
+			else:
+				H=E.get(CONF_LED_MODE,LED_MODE_ROOM)
+				@callback
+				def I(event,_btn=D,_cfg=E,_ents=B):A._update_entity_toggle_led(_btn,_cfg,_ents)
+				C=async_track_state_change_event(A.hass,B,I);A._entity_tracking_unsubs.append(C);_LOGGER.debug("'%s': button %d: %s LED tracking %s",A.name,D,H,B)
+	def register_state_sensor(A,sensor):
+		B=sensor
+		if B not in A._state_sensors:A._state_sensors.append(B)
+	@callback
+	def _notify_state_sensors(self):
+		for A in self._state_sensors:A.async_write_ha_state()
+	def _update_button_switch_state(B,btn_num,is_on):
+		A=B._button_switches.get(btn_num)
+		if A is not _A:A.update_led_state(is_on)
+	async def _write_led_entity(A,btn_num,is_on):
+		C=is_on;B=btn_num;D=A._get_led_entity(B)
+		if not D:return
+		E=A._buttons.get(B,{})
+		if E.get(CONF_LED_INVERT,_C):C=not C
+		F=SERVICE_TURN_ON if C else SERVICE_TURN_OFF
+		try:await A.hass.services.async_call(_R,F,{ATTR_ENTITY_ID:D},blocking=_B);_LOGGER.debug("'%s': button %d LED '%s' → %s",A.name,B,D,'ON'if C else'OFF')
+		except Exception as G:_LOGGER.warning("'%s': button %d could not write LED entity '%s': %s",A.name,B,D,G)
+	async def _write_group_leds(A,active_btn,active_btn_cfg):
+		C=active_btn_cfg.get(_L)or A.scene_group
+		for(B,D)in A._buttons.items():
+			if D.get(CONF_ACTION_TYPE)!=ACTION_STATEFUL_SCENE:continue
+			if not A._get_led_entity(B):continue
+			E=D.get(_L)or A.scene_group
+			if C and E!=C:continue
+			await A._write_led_entity(B,B==active_btn)
+	async def _sync_leds(A,active_btn):
+		C=active_btn;_LOGGER.debug("'%s': _sync_leds called, active_btn=%s",A.name,C)
+		for(B,E)in A._buttons.items():
+			if E.get(CONF_ACTION_TYPE)!=ACTION_STATEFUL_SCENE:continue
+			if A._get_led_entity(B):continue
+			D=B==C;_LOGGER.debug("'%s': Button %d (no LED entity) should_be_on=%s",A.name,B,D);A._update_button_switch_state(B,D)
+	def _try_auto_map_raise_lower(B,leap_num):
+		C=leap_num;from.const import RAISE_LOWER_BUTTON_TYPES as D
+		for(E,F)in((ACTION_RAISE,D['raise']),(ACTION_LOWER,D['lower'])):
+			if C not in F:continue
+			A=next((A for(A,B)in B._buttons.items()if B.get(CONF_ACTION_TYPE)==E),_A)
+			if A is not _A:B._leap_btn_map[C]=A;_LOGGER.info("'%s': auto-mapped raise/lower: leap_btn=%d → btn=%d (%s)",B.name,C,A,E);return A
+	def _matches_event(A,event_data):
+		B=event_data;C=str(B.get(_E,'')).strip()
+		if C and A.device_id and C==A.device_id:return _B
+		if A.serial:
+			D=str(B.get(_J,'')).strip()
+			if D and D==str(A.serial):return _B
+		E=str(B.get('device_name','')).lower();F=str(B.get(_A2,'')).lower()
+		if A.device_name and A.area_name:return E==A.device_name and F==A.area_name
+		if A.device_name:return E==A.device_name
+		if A.area_name:return F==A.area_name
+		return _C
+	@callback
+	def _handle_event(self,event):
+		H='action';A=self;B=event.data;_LOGGER.debug("'%s': event received — serial=%s device_id=%s btn=%s leap_btn=%s action=%s",A.name,B.get(_J),B.get(_E),B.get(_Z),B.get(_a),B.get(H))
+		if not A._matches_event(B):_LOGGER.debug("'%s': ignoring event — ev serial=%s device_id=%s / our serial=%s device_id=%s",A.name,B.get(_J),B.get(_E),A.serial,A.device_id);return
+		E=B.get(_Z)
+		if E is _A:
+			F=B.get(_a)
+			if F is _A:_LOGGER.debug("'%s': event has no button_number or leap_button_number: %s",A.name,B);return
+			E=int(F)
+		C=A._leap_btn_map.get(int(E),int(E));_LOGGER.debug("'%s': matched — resolved btn_num=%d, configured buttons=%s",A.name,C,list(A._buttons.keys()));D=A._buttons.get(C)
+		if D is _A:
+			G=A._try_auto_map_raise_lower(C)
+			if G is not _A:C=G;D=A._buttons.get(C)
+		if D is _A:_LOGGER.debug("'%s': button %d pressed but not configured — ignoring",A.name,C);return
+		I=B.get(H,'press')
+		if I=='release':A._handle_release(C);return
+		_LOGGER.info("'%s': button %d (%s) pressed — action_type=%s",A.name,C,D.get(CONF_BUTTON_LABEL,''),D[CONF_ACTION_TYPE]);A._on_press(C,D)
+	_HOLD_CONFIRM=.3;_HOLD_CONFIRM_CYCLE=.7;_PRESS_DEBOUNCE=.2;_DOUBLE_TAP_WINDOW=.4;_RAMP_STEP_PCT=10;_RAMP_INTERVAL=.4;_HOLD_ACTIONS=frozenset({ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_STATEFUL_SCENE,ACTION_RAISE,ACTION_LOWER,ACTION_LIGHT_CYCLE_DIM})
+	@callback
+	def _on_press(self,btn_num,btn_cfg):
+		C=btn_cfg;B=btn_num;A=self;D=asyncio.get_event_loop().time();F=A._last_dispatch_times.get(B,0)
+		if D-F<A._PRESS_DEBOUNCE:_LOGGER.debug("'%s': button %d press ignored — %.0fms since last dispatch (debounce)",A.name,B,(D-F)*1000);return
+		G=A._confirm_handles.pop(B,_A)
+		if G is not _A:G.cancel()
+		E=A._ramp_tasks.pop(B,_A)
+		if E is not _A and not E.done():E.cancel()
+		H=A._last_press_times.get(B,0);A._last_press_times[B]=D;A._press_times[B]=D;A._held[B]=_C;I=C.get(_j,{});J=I.get(_u,{})
+		if D-H<A._DOUBLE_TAP_WINDOW and J.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE:_LOGGER.info("'%s': button %d DOUBLE TAP (%.3fs since last press)",A.name,B,D-H);L=A._merge_v2_block(C,J);A.hass.async_create_task(A._dispatch(B,L));return
+		K=C.get(CONF_ACTION_TYPE);M=I.get(_i,{});N=M.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE and not C.get(_O,_C);O=K in A._HOLD_ACTIONS or C.get(_O,_C)or N
+		if not O:A._last_dispatch_times[B]=D;A.hass.async_create_task(A._dispatch(B,C))
+		else:P=A._HOLD_CONFIRM_CYCLE if K==ACTION_ENTITY_TOGGLE and C.get(_O,_C)else A._HOLD_CONFIRM;Q=A.hass.loop.call_later(P,A._on_hold_event,B);A._confirm_handles[B]=Q
+	@callback
+	def _handle_release(self,btn_num):
+		B=btn_num;A=self;D=asyncio.get_event_loop().time();E=D-A._press_times.get(B,D);_LOGGER.debug("'%s': button %d release elapsed=%.3fs held=%s confirm=%s",A.name,B,E,A._held.get(B),B in A._confirm_handles)
+		if A._held.get(B,_C):
+			F=A._ramp_tasks.pop(B,_A)
+			if F is not _A and not F.done():F.cancel()
+			A._held.pop(B,_A);A._ramp_end_times[B]=D;H=E-A._HOLD_CONFIRM
+			if H<A._RAMP_INTERVAL:
+				C=A._buttons.get(B)
+				if C is not _A:
+					I=C.get(CONF_ACTION_TYPE)
+					if I in(ACTION_RAISE,ACTION_LOWER):_LOGGER.debug("'%s': button %d short hold (%.0fms in ramp) — dispatching single step",A.name,B,H*1000);A.hass.async_create_task(A._dispatch(B,C))
+			return
+		G=A._confirm_handles.pop(B,_A)
+		if G is not _A:G.cancel()
+		C=A._buttons.get(B)
+		if C is not _A and G is not _A:_LOGGER.info("'%s': button %d TAP (elapsed=%.3fs)",A.name,B,E);A._last_dispatch_times[B]=D;A.hass.async_create_task(A._dispatch(B,C))
+	@callback
+	def _on_hold_event(self,btn_num):
+		B=btn_num;A=self;A._confirm_handles.pop(B,_A);C=A._buttons.get(B)
+		if C is _A:return
+		F=C.get(CONF_ACTION_TYPE);H=C.get(_O,_C);I=C.get(_j,{});G=I.get(_i,{})
+		if not H and G.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE:_LOGGER.info("'%s': button %d HOLD — dispatching custom hold action '%s'",A.name,B,G.get(CONF_ACTION_TYPE));A._held[B]=_B;J=A._merge_v2_block(C,G);A.hass.async_create_task(A._dispatch(B,J));return
+		if F==ACTION_RAISE:E=_g;D=A._get_last_ramp_lights()
+		elif F==ACTION_LOWER:E=_T;D=A._get_last_ramp_lights()
+		elif F==ACTION_LIGHT_CYCLE_DIM or H:D=A._get_btn_light_entities(C);E=A._next_ramp_dir(B,D);_LOGGER.info("'%s': button %d HOLD — cycle_dim ramp %s on %s",A.name,B,E,D)
+		else:
+			if not A._is_btn_led_on(B):_LOGGER.debug("'%s': button %d hold event — LED off, dispatching instead",A.name,B);A._held[B]=_B;A.hass.async_create_task(A._dispatch(B,C));return
+			D=A._get_btn_light_entities(C);E=A._next_ramp_dir(B,D)
+		if not D:_LOGGER.debug("'%s': button %d hold event — no rampable lights, dispatching",A.name,B);A._held[B]=_B;A.hass.async_create_task(A._dispatch(B,C));return
+		_LOGGER.info("'%s': button %d HOLD EVENT — ramp %s on %s",A.name,B,E,D);A._held[B]=_B;K=A.hass.async_create_task(A._ramp_loop(B,D,E));A._ramp_tasks[B]=K
+	async def _ramp_loop(A,btn_num,entities,direction):
+		C=direction
+		try:
+			while _B:
+				D=_B
+				for B in entities:
+					E=A.hass.states.get(B)
+					if E is _A:continue
+					if E.state==_f:
+						if C==_g:await A.hass.services.async_call(_H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_U:1},blocking=_C);D=_C
+						continue
+					F=round((E.attributes.get(_G,0)or 0)/255*100);G=min(100,F+A._RAMP_STEP_PCT)if C==_g else max(0,F-A._RAMP_STEP_PCT)
+					if G==F:continue
+					D=_C
+					if C==_T and G<=0:await A.hass.services.async_call(_H,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_C)
+					else:await A.hass.services.async_call(_H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_U:G,_q:A._RAMP_INTERVAL},blocking=_C)
+				if D:break
+				await asyncio.sleep(A._RAMP_INTERVAL)
+		except asyncio.CancelledError:pass
+		finally:A._ramp_tasks.pop(btn_num,_A)
+	_RAMP_DIR_RESET_WINDOW=5.
+	def _next_ramp_dir(A,btn_num,entities=_A):
+		D=entities;C=btn_num;F=asyncio.get_event_loop().time();E=A._ramp_end_times.get(C)
+		if E is _A or F-E>A._RAMP_DIR_RESET_WINDOW:
+			if D and all(A._light_at_max(B)for B in D):B=_T
+			else:B=_g
+		else:G=A._ramp_dirs.get(C,_T);B=_g if G==_T else _T
+		A._ramp_dirs[C]=B;return B
+	def _light_at_max(B,eid):
+		A=B.hass.states.get(eid)
+		if A is _A or A.state!='on':return _C
+		return round((A.attributes.get(_G,0)or 0)/255*100)>=99
+	def _is_btn_led_on(A,btn_num):
+		B=btn_num;C=A._button_switches.get(B)
+		if C is not _A:return bool(C.is_on)
+		D=A._get_led_entity(B)
+		if D:E=A.hass.states.get(D);return E is not _A and E.state=='on'
+		return _C
+	def _merge_v2_block(D,btn_cfg,block):
+		A=block;B=dict(btn_cfg);B[CONF_ACTION_TYPE]=A.get(CONF_ACTION_TYPE,ACTION_NONE);C=A.get(CONF_ACTION_TARGET,'');B[CONF_ACTION_TARGET]=_normalize_action_target(C,B[CONF_ACTION_TYPE]);B[CONF_ENTITY_SETTINGS]=A.get(CONF_ENTITY_SETTINGS,{})
+		if A.get(CONF_TARGET_BRIGHTNESS):B[CONF_TARGET_BRIGHTNESS]=int(A[CONF_TARGET_BRIGHTNESS])
+		if A.get(CONF_TARGET_COLOR_TEMP):B[CONF_TARGET_COLOR_TEMP]=int(A[CONF_TARGET_COLOR_TEMP])
+		if A.get(_L):B[_L]=A[_L]
+		return B
+	def _get_btn_light_entities(E,btn_cfg):
+		A=btn_cfg;B=A.get(CONF_ACTION_TYPE)
+		if B in(ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_LIGHT_CYCLE_DIM):return[A for A in _normalize_targets(A.get(CONF_ACTION_TARGET,[]))if A.startswith(_N)]
+		if B==ACTION_STATEFUL_SCENE:
+			C=A.get(CONF_ACTION_TARGET,'');D=E.hass.states.get(C)if C else _A
+			if D:return[A for A in D.attributes.get(_A8,[])if A.startswith(_N)]
+		if A.get(_O,_C):return[A for A in _normalize_targets(A.get(CONF_ACTION_TARGET,[]))if A.startswith(_N)]
+		return[]
+	def _scene_light_entities(B,scene_id):
+		A=B.hass.states.get(scene_id)
+		if A is _A:return[]
+		return[A for A in A.attributes.get(_A8,[])if A.startswith(_N)]
+	def _get_last_ramp_lights(A):
+		if A._last_action is _A:return[]
+		B=A._last_action.get(_I,[])
+		if B:return[A for A in B if A.startswith(_N)]
+		D=A._last_action.get(_D)
+		if D in(ACTION_STATEFUL_SCENE,ACTION_HA_SCENE):C=A._last_action.get(_r,'');return A._scene_light_entities(C)if C else[]
+		return[]
+	async def _dispatch(A,btn_num,btn_cfg):
+		X='delay';W='fade';G=btn_cfg;C=btn_num;F=G[CONF_ACTION_TYPE];I=G.get(CONF_ACTION_TARGET);S=G.get(CONF_ACTION_PARAMS,{})
+		if F==ACTION_NONE:return
+		elif F==ACTION_HA_SCENE:await A._activate_scene(I);await A._write_led_entity(C,_B);A._last_action={_D:ACTION_HA_SCENE,_r:I}
+		elif F==ACTION_STATEFUL_SCENE:await A._activate_stateful_scene(C,G,I)
+		elif F==ACTION_AUTOMATION:await A._trigger_automation(I);await A._write_led_entity(C,_B)
+		elif F==ACTION_SCRIPT:await A._run_script(I,S);await A._write_led_entity(C,_B)
+		elif F==ACTION_ENTITY_TOGGLE:
+			D=_normalize_targets(I);O=int(G.get(CONF_TARGET_BRIGHTNESS)or 0);P=int(G.get(CONF_TARGET_COLOR_TEMP)or 0);J=G.get(CONF_ENTITY_SETTINGS,{});Z=G.get(CONF_LED_MODE,LED_MODE_ROOM);a=G.get(_j,{});b=a.get(_t,{});U=b.get('entity_settings',{})
+			if Z==LED_MODE_SCENE:
+				if A._is_btn_led_on(C):
+					_LOGGER.info("'%s': button %d PRESS OFF (scene mode) — LED was ON, applying off_level to %s",A.name,C,D)
+					for B in D:
+						H=B.split(_Q)[0];V=U.get(B,{});K=int(V.get(_G)or 0)
+						if H==_H and K>0:_LOGGER.info("'%s': button %d  → %s dim to %d%%",A.name,C,B,K);await A.hass.services.async_call(_H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_U:K},blocking=_B)
+						else:_LOGGER.info("'%s': button %d  → %s turn OFF",A.name,C,B);await A.hass.services.async_call(H,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_B)
+					A._last_action={_D:ACTION_ENTITY_TOGGLE,_I:D};await A._write_led_entity(C,_C)
+				else:
+					_LOGGER.info("'%s': button %d PRESS ON (scene mode) — LED was OFF, activating scene on %s",A.name,C,D)
+					for B in D:
+						if B.startswith(_N):E=J.get(B,{});L=int(E.get(_G)or O);M=int(E.get(_S)or P);Q=E.get(_h);N=float(E.get(W)or 0);R=float(E.get(X)or 0);_LOGGER.info("'%s': button %d  → %s bri=%d%% cct=%dK fade=%.1fs",A.name,C,B,L,M,N);await A._apply_light_settings(B,L,M,Q,N,R)
+						else:H=B.split(_Q)[0];await A.hass.services.async_call(H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B},blocking=_B)
+					A._last_action={_D:ACTION_ENTITY_TOGGLE,_I:D}
+			else:
+				T=_C
+				if D:Y=A.hass.states.get(D[0]);T=Y is not _A and Y.state not in(_f,_o,_p,_c,_b)
+				c=any(int(J.get(A,{}).get(_G)or O)>0 or int(J.get(A,{}).get(_S)or P)>0 or bool(J.get(A,{}).get(_h))for A in D if A.startswith(_N))if D else _C
+				if not T and c:
+					for B in D:
+						if B.startswith(_N):E=J.get(B,{});L=int(E.get(_G)or O);M=int(E.get(_S)or P);Q=E.get(_h);N=float(E.get(W)or 0);R=float(E.get(X)or 0);await A._apply_light_settings(B,L,M,Q,N,R)
+						else:H=B.split(_Q)[0];await A.hass.services.async_call(H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B},blocking=_B)
+					A._last_action={_D:ACTION_ENTITY_TOGGLE,_I:D};await A._write_led_entity(C,_B)
+				elif T and U:
+					for B in D:
+						H=B.split(_Q)[0];V=U.get(B,{});K=int(V.get(_G)or 0)
+						if H==_H and K>0:await A.hass.services.async_call(_H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_U:K},blocking=_B)
+						else:await A.hass.services.async_call(H,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_B)
+					A._last_action={_D:ACTION_ENTITY_TOGGLE,_I:D};await A._write_led_entity(C,_C)
+				else:await A._entity_toggle(I);await A._write_led_entity(C,not T)
+		elif F==ACTION_SINGLE_ACTION:
+			D=_normalize_targets(I);O=int(G.get(CONF_TARGET_BRIGHTNESS)or 0);P=int(G.get(CONF_TARGET_COLOR_TEMP)or 0);J=G.get(CONF_ENTITY_SETTINGS,{});_LOGGER.info("'%s': button %d SINGLE ACTION — activating %s",A.name,C,D)
+			for B in D:
+				if B.startswith(_N):E=J.get(B,{});L=int(E.get(_G)or O);M=int(E.get(_S)or P);Q=E.get(_h);N=float(E.get(W)or 0);R=float(E.get(X)or 0);await A._apply_light_settings(B,L,M,Q,N,R)
+				else:H=B.split(_Q)[0];await A.hass.services.async_call(H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B},blocking=_B)
+			A._last_action={_D:ACTION_SINGLE_ACTION,_I:D}
+		elif F==ACTION_COVER_CYCLE:await A._cover_cycle(C,I)
+		elif F==ACTION_LIGHT_CYCLE_DIM:d=S.get('levels',DIM_CYCLE_LEVELS);await A._light_cycle_dim(C,I,d)
+		elif F==ACTION_RAISE:await A._raise(S)
+		elif F==ACTION_LOWER:await A._lower(S)
+		else:_LOGGER.error("'%s': unknown action_type '%s'",A.name,F);return
+		if A._last_action is not _A and F not in(ACTION_RAISE,ACTION_LOWER):A._last_action[_A0]=C
+		A._notify_state_sensors()
+	async def _apply_light_settings(E,eid,bri,cct,hs_color=_A,fade=0,delay=0):
+		H=delay;G=hs_color;F=eid;D=cct;C=bri;A=fade
+		if H>0:await asyncio.sleep(H)
+		if C>0 and D>0:
+			I={ATTR_ENTITY_ID:F,_A4:D}
+			if A>0:I[_q]=A
+			await E.hass.services.async_call(_H,SERVICE_TURN_ON,I,blocking=_B);J={ATTR_ENTITY_ID:F,_U:C}
+			if A>0:J[_q]=A
+			await E.hass.services.async_call(_H,SERVICE_TURN_ON,J,blocking=_B)
+		else:
+			B={ATTR_ENTITY_ID:F}
+			if C>0:B[_U]=C
+			if D>0:B[_A4]=D
+			if G:B[_h]=G
+			if A>0:B[_q]=A
+			await E.hass.services.async_call(_H,SERVICE_TURN_ON,B,blocking=_B)
+	async def _activate_scene(B,scene_id):A=scene_id;await B.hass.services.async_call('scene','turn_on',{ATTR_ENTITY_ID:A},blocking=_B);_LOGGER.debug('Scene activated: %s',A)
+	async def _activate_stateful_scene(A,btn_num,btn_cfg,scene_id):
+		D=btn_cfg;C=scene_id;B=btn_num;await A._activate_scene(C);A._active_scene_btn=B;E=D.get(_L)or A.scene_group
+		if E:_SCENE_GROUPS[E]=B
+		await A._sync_leds(B);await A._write_group_leds(B,D);A._last_action={_D:ACTION_STATEFUL_SCENE,_r:C,_A0:B};_LOGGER.debug("Stateful scene '%s' activated on btn %d",C,B)
+	async def _trigger_automation(A,automation_id):B=automation_id;await A.hass.services.async_call('automation','trigger',{ATTR_ENTITY_ID:B,'skip_condition':_B},blocking=_B);A._last_action={_D:ACTION_AUTOMATION,_F:B}
+	async def _run_script(B,script_id,params):
+		D=params;C=script_id;A='variables';E={ATTR_ENTITY_ID:C}
+		if A in D:E[A]=D[A]
+		await B.hass.services.async_call('script','turn_on',E,blocking=_C);B._last_action={_D:ACTION_SCRIPT,_F:C}
+	async def _entity_toggle(A,targets):
+		B=_normalize_targets(targets)
+		for C in B:D=C.split(_Q)[0];await A.hass.services.async_call(D,SERVICE_TOGGLE,{ATTR_ENTITY_ID:C},blocking=_B)
+		A._last_action={_D:ACTION_ENTITY_TOGGLE,_I:B}
+	async def _cover_cycle(B,btn_num,targets):
+		F=btn_num;C=_normalize_targets(targets);D=B._cover_states.get(F,COVER_STATE_CLOSE)
+		if D==COVER_STATE_CLOSE:A=COVER_STATE_OPEN;E=_A9
+		elif D==COVER_STATE_OPEN:A=COVER_STATE_STOP;E='stop_cover'
+		else:A=COVER_STATE_CLOSE;E=_AA
+		B._cover_states[F]=A;await B.hass.services.async_call(_A5,E,{ATTR_ENTITY_ID:C},blocking=_B);B._last_action={_D:ACTION_COVER_CYCLE,_I:C,'state':A};_LOGGER.debug('Cover cycle: %s → %s on %s',D,A,C)
+	async def _light_cycle_dim(A,btn_num,targets,levels):
+		E=btn_num;D=levels;B=_normalize_targets(targets);C=A._light_dim_indices.get(E,len(D))
+		if C>=len(D):C=0
+		else:C+=1
+		if C>=len(D):await A.hass.services.async_call(_H,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_B);A._light_dim_indices[E]=len(D);A._last_action={_D:ACTION_LIGHT_CYCLE_DIM,_I:B,_G:0};_LOGGER.debug('Light cycle: turned off %s',B)
+		else:F=D[C];G=int(F/100*255);await A.hass.services.async_call(_H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_G:G},blocking=_B);A._light_dim_indices[E]=C;A._last_action={_D:ACTION_LIGHT_CYCLE_DIM,_I:B,_G:F};_LOGGER.debug('Light cycle: %s → %d%%',B,F)
+	def _last_action_light_entities(A):
+		if A._last_action is _A:return[]
+		B=A._last_action.get(_I,[])
+		if B:return[A for A in B if A.startswith(_N)]
+		D=A._last_action.get(_D)
+		if D in(ACTION_STATEFUL_SCENE,ACTION_HA_SCENE):C=A._last_action.get(_r,'');return A._scene_light_entities(C)if C else[]
+		return[]
+	async def _raise(A,params):
+		if A._last_action is _A:_LOGGER.debug("'%s': RAISE pressed but no prior context",A.name);return
+		D=A._last_action;F=D.get(_D);B=D.get(_I,[])
+		if F==ACTION_COVER_CYCLE or _entities_are_covers(B):
+			await A.hass.services.async_call(_A5,_A9,{ATTR_ENTITY_ID:B},blocking=_B)
+			for(G,C)in A._buttons.items():
+				if C.get(CONF_ACTION_TYPE)==ACTION_COVER_CYCLE and C.get(CONF_ACTION_TARGET):
+					H=_normalize_targets(C[CONF_ACTION_TARGET])
+					if any(A in B for A in H):A._cover_states[G]=COVER_STATE_OPEN
+		else:
+			E=A._last_action_light_entities()
+			if E:await A._adjust_light_brightness(E,+RAISE_LOWER_STEP)
+			else:_LOGGER.debug("'%s': RAISE — no applicable entities from last action",A.name)
+	async def _lower(A,params):
+		if A._last_action is _A:_LOGGER.debug("'%s': LOWER pressed but no prior context",A.name);return
+		D=A._last_action;F=D.get(_D);B=D.get(_I,[])
+		if F==ACTION_COVER_CYCLE or _entities_are_covers(B):
+			await A.hass.services.async_call(_A5,_AA,{ATTR_ENTITY_ID:B},blocking=_B)
+			for(G,C)in A._buttons.items():
+				if C.get(CONF_ACTION_TYPE)==ACTION_COVER_CYCLE and C.get(CONF_ACTION_TARGET):
+					H=_normalize_targets(C[CONF_ACTION_TARGET])
+					if any(A in B for A in H):A._cover_states[G]=COVER_STATE_CLOSE
+		else:
+			E=A._last_action_light_entities()
+			if E:await A._adjust_light_brightness(E,-RAISE_LOWER_STEP)
+			else:_LOGGER.debug("'%s': LOWER — no applicable entities from last action",A.name)
+	async def _adjust_light_brightness(B,entities,delta_pct):
+		for A in entities:
+			C=B.hass.states.get(A)
+			if C is _A:continue
+			G=A.split(_Q)[0]
+			if G!=_H:continue
+			H=C.attributes.get(_G,0)or 0;D=round(H/255*100);E=max(0,min(100,D+delta_pct));F=int(E/100*255)
+			if F<=0:await B.hass.services.async_call(_H,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:A},blocking=_B)
+			else:await B.hass.services.async_call(_H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:A,_G:F},blocking=_B)
+			_LOGGER.debug('Brightness adjust %s: %d%% → %d%%',A,D,E)
+def _normalize_targets(targets):
+	A=targets
+	if A is _A:return[]
+	if isinstance(A,str):
+		if not A:return[]
+		if','in A:return[A.strip()for A in A.split(',')if A.strip()]
+		return[A]
+	if isinstance(A,(list,tuple)):return[str(A)for A in A if A]
+	return[str(A)]
+def _entities_are_covers(entities):return any(A.startswith('cover.')for A in entities)

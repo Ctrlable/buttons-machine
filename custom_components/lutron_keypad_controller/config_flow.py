@@ -1,1033 +1,310 @@
-"""Config flow for Lutron Keypad Controller."""
 from __future__ import annotations
-
+_r='led_bindings'
+_q='Keypad'
+_p='license'
+_o='keypad'
+_n='remote'
+_m='tabletop'
+_l='seetouch'
+_k='hybrid'
+_j='sunnata'
+_i='palladiom'
+_h='alisee'
+_g='scene_group'
+_f='keypad_name'
+_e='is_lower'
+_d='is_raise'
+_c='value'
+_b='lutron_type'
+_a='model'
+_Z='leap_button_map'
+_Y='lower_button'
+_X='raise_button'
+_W='configurable_buttons'
+_V='-down'
+_U=' down'
+_T='-lower'
+_S=' lower'
+_R='-up'
+_Q=' up'
+_P='-raise'
+_O=' raise'
+_N='leap_button_number'
+_M='button_number'
+_L='lutron_caseta'
+_K='button_numbers'
+_J='area_name'
+_I='button_names'
+_H='device_id'
+_G='type'
+_F='label'
+_E='buttons'
+_D='number'
+_C='serial'
+_B='name'
+_A=None
 import logging
 from typing import Any
-
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant,callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
+from homeassistant.helpers.instance_id import async_get as async_get_instance_id
 import homeassistant.helpers.config_validation as cv
-
-from .const import (
-    DOMAIN,
-    ACTION_ENTITY_TOGGLE,
-    CONF_DEVICE_SERIAL,
-    CONF_DEVICE_NAME,
-    CONF_AREA_NAME,
-    CONF_KEYPAD_TYPE,
-    CONF_ACTION_TYPE,
-    CONF_ACTION_TARGET,
-    CONF_LED_ENTITY,
-    CONF_LED_INVERT,
-    CONF_LED_MODE,
-    CONF_TARGET_BRIGHTNESS,
-    CONF_TARGET_COLOR_TEMP,
-    LED_MODE_ROOM,
-    LED_MODE_SCENE,
-    ACTION_STATEFUL_SCENE,
-    KEYPAD_SEETOUCH,
-    KEYPAD_SEETOUCH_HYBRID,
-    KEYPAD_SUNNATA,
-    KEYPAD_SUNNATA_HYBRID,
-    KEYPAD_ALISEE,
-    KEYPAD_PALLADIOM,
-    KEYPAD_TABLETOP,
-    KEYPAD_PICO,
-    KEYPAD_GENERIC,
-    ACTION_NONE,
-    ACTION_RAISE,
-    ACTION_LOWER,
-    ACTION_TYPE_LABELS,
-    ACTION_TYPE_DOMAINS,
-    ACTION_TYPES_NEEDING_ENTITY,
-    MULTI_ENTITY_ACTIONS,
-    get_button_list,
-    get_button_layout,
-)
-
-_LOGGER = logging.getLogger(__name__)
-
-# ── Lutron device-type string → our keypad type ───────────────────────────────
-LUTRON_TYPE_MAP: dict[str, str] = {
-    # SeeTouch / Hybrid
-    "SeeTouchKeypad":                   KEYPAD_SEETOUCH,
-    "SeeTouchHybridKeypad":             KEYPAD_SEETOUCH_HYBRID,
-    "HybridSeeTouch":                   KEYPAD_SEETOUCH_HYBRID,
-    "HybridSeeTouchKeypad":             KEYPAD_SEETOUCH_HYBRID,
-    "SeeTouch":                         KEYPAD_SEETOUCH,
-    # Sunnata
-    "SunnataKeypad":                    KEYPAD_SUNNATA,
-    "SunnataHybridKeypad":              KEYPAD_SUNNATA_HYBRID,
-    "SunnataSwitchingKeypad":           KEYPAD_SUNNATA,
-    "Sunnata":                          KEYPAD_SUNNATA,
-    # Alisee / Alisse — always map before any generic SeeTouch fallback.
-    # Lutron uses "Alisée" in marketing; the bridge reports "AlisseKeypad" (double-s).
-    "AlisseKeypad":                     KEYPAD_ALISEE,
-    "AlisseSeeTouchKeypad":             KEYPAD_ALISEE,
-    "Alisse":                           KEYPAD_ALISEE,
-    "AliseeKeypad":                     KEYPAD_ALISEE,   # older bridge spelling
-    "AliseeSeeTouchKeypad":             KEYPAD_ALISEE,
-    "Alisee":                           KEYPAD_ALISEE,
-    "GrafikEyeQS":                      KEYPAD_ALISEE,
-    "GRAFIK Eye QS":                    KEYPAD_ALISEE,
-    # Palladiom variants — Homeworks QSX / RA3
-    "PalladiomKeypad":                  KEYPAD_PALLADIOM,
-    "PalladiomKeypad2Button":           KEYPAD_PALLADIOM,
-    "PalladiomKeypad3Button":           KEYPAD_PALLADIOM,
-    "PalladiomKeypad4Button":           KEYPAD_PALLADIOM,
-    "PalladiomKeypad5Button":           KEYPAD_PALLADIOM,
-    "PalladiomKeypad7Button":           KEYPAD_PALLADIOM,
-    "Palladiom":                        KEYPAD_PALLADIOM,
-    "PalladiomWirelessKeypad":          KEYPAD_PALLADIOM,
-    "PalladiomSeeTouchKeypad":          KEYPAD_PALLADIOM,
-    "PalladiomHybridKeypad":            KEYPAD_PALLADIOM,
-    # Tabletop
-    "TabletopSeeTouch":                 KEYPAD_TABLETOP,
-    "SeeTouchTabletop":                 KEYPAD_TABLETOP,
-    "TabletopKeypad":                   KEYPAD_TABLETOP,
-    # Pico remotes
-    "Pico1Button":                      KEYPAD_PICO,
-    "Pico2Button":                      KEYPAD_PICO,
-    "Pico2ButtonRaiseLower":            KEYPAD_PICO,
-    "Pico3Button":                      KEYPAD_PICO,
-    "Pico3ButtonRaiseLower":            KEYPAD_PICO,
-    "Pico4Button":                      KEYPAD_PICO,
-    "Pico4ButtonScene":                 KEYPAD_PICO,
-    "Pico4ButtonZone":                  KEYPAD_PICO,
-    "Pico4Button2Group":                KEYPAD_PICO,
-    "FourGroupRemote":                  KEYPAD_PICO,
-    "PaddleRemote":                     KEYPAD_PICO,
-}
-
-# Ordered most-specific → least-specific so a type string containing multiple
-# keywords (e.g. "PalladiomSeeTouchKeypad") resolves to the right family.
-LUTRON_TYPE_FUZZY: list[tuple[str, str]] = [
-    ("aliss",      KEYPAD_ALISEE),       # matches AlisseKeypad (double-s) first
-    ("alisee",     KEYPAD_ALISEE),       # matches AliseeKeypad (legacy spelling)
-    ("palladiom",  KEYPAD_PALLADIOM),    # before "seetouch" / "keypad"
-    ("sunnata",    KEYPAD_SUNNATA),
-    ("hybrid",     KEYPAD_SEETOUCH_HYBRID),
-    ("seetouch",   KEYPAD_SEETOUCH),
-    ("tabletop",   KEYPAD_TABLETOP),
-    ("pico",       KEYPAD_PICO),
-    ("remote",     KEYPAD_PICO),
-    ("keypad",     KEYPAD_SEETOUCH),     # last-resort generic fallback
-]
-
-BUTTON_TYPE_KEYWORDS = {
-    "keypad", "pico", "remote", "seetouch", "sunnata",
-    "aliss", "alisee", "palladiom", "tabletop", "hybrid",
-}
-
-
-def _infer_keypad_type(device_type: str) -> str:
-    if device_type in LUTRON_TYPE_MAP:
-        return LUTRON_TYPE_MAP[device_type]
-    lower = device_type.lower()
-    for keyword, kp_type in LUTRON_TYPE_FUZZY:
-        if keyword in lower:
-            _LOGGER.debug("Fuzzy-matched device type %r → %s", device_type, kp_type)
-            return kp_type
-    _LOGGER.warning("Unrecognized Lutron device type %r — falling back to generic keypad", device_type)
-    return KEYPAD_GENERIC
-
-
-def _is_keypad_device(device: dict) -> bool:
-    device_type: str = device.get("type", "")
-    if device_type in LUTRON_TYPE_MAP:
-        return True
-    lower = device_type.lower()
-    return any(kw in lower for kw in BUTTON_TYPE_KEYWORDS)
-
-
-def _iter_lutron_bridges(hass: HomeAssistant):
-    """Yield every loaded pylutron-caseta bridge, across all config entries."""
-    for entry in hass.config_entries.async_entries("lutron_caseta"):
-        if entry.state is not ConfigEntryState.LOADED:
-            continue
-        runtime = getattr(entry, "runtime_data", None)
-        if runtime is not None:
-            bridge = getattr(runtime, "bridge", None)
-            if bridge is not None:
-                yield bridge
-                continue
-        entry_data = hass.data.get("lutron_caseta", {}).get(entry.entry_id)
-        if entry_data is not None:
-            bridge = getattr(entry_data, "bridge", None)
-            if bridge is None and isinstance(entry_data, dict):
-                bridge = entry_data.get("bridge")
-            if bridge is not None:
-                yield bridge
-
-
-def _get_lutron_bridge(hass: HomeAssistant):
-    """Return the first available bridge (use _iter_lutron_bridges for multi-bridge setups)."""
-    return next(_iter_lutron_bridges(hass), None)
-
-
-def _discover_keypads(hass: HomeAssistant) -> list[dict]:
-    """Collect keypad devices from ALL loaded bridges (supports multi-bridge deployments)."""
-    seen: set[str] = set()
-    keypads: list[dict] = []
-    for bridge in _iter_lutron_bridges(hass):
-        try:
-            all_devices: dict = bridge.get_devices()
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("Could not query Lutron bridge devices: %s", exc)
-            continue
-        for d in all_devices.values():
-            if not _is_keypad_device(d):
-                continue
-            serial = str(d.get("serial", ""))
-            if serial and serial in seen:
-                continue
-            keypads.append(d)
-            if serial:
-                seen.add(serial)
-    keypads.sort(key=lambda d: (d.get("area_name", ""), d.get("name", "")))
-    return keypads
-
-
-def _build_device_options(keypads: list[dict]) -> dict[str, str]:
-    options: dict[str, str] = {}
-    for device in keypads:
-        serial = str(device.get("serial", ""))
-        if not serial:
-            continue
-        area  = device.get("area_name", "Unknown Area")
-        name  = device.get("name", "Unknown")
-        ktype = _infer_keypad_type(device.get("type", ""))
-        options[serial] = f"{area} — {name}  [{ktype}]"
-    return options
-
-
-def _resolve_btn_num(bd: dict) -> int | None:
-    """Return a button's number, preferring leap_button_number when button_number is null."""
-    for key in ("button_number", "leap_button_number"):
-        raw = bd.get(key)
-        if raw is not None:
-            try:
-                return int(raw)
-            except (TypeError, ValueError):
-                pass
-    return None
-
-
-def _strip_engraving(full_name: str, area: str, device: str) -> str:
-    """Strip area/device prefix from a Lutron button name to get the engraving."""
-    name = full_name.strip()
-    for prefix in [f"{area} {device}", device, area]:
-        prefix = prefix.strip()
-        if prefix and name.lower().startswith(prefix.lower()):
-            name = name[len(prefix):].strip()
-            break
-    return name.title() if name else full_name.strip()
-
-
+from.const import DOMAIN,ACTION_ENTITY_TOGGLE,CONF_DEVICE_SERIAL,CONF_DEVICE_NAME,CONF_AREA_NAME,CONF_KEYPAD_TYPE,CONF_ACTION_TYPE,CONF_ACTION_TARGET,CONF_LED_ENTITY,CONF_LED_INVERT,CONF_LED_MODE,CONF_TARGET_BRIGHTNESS,CONF_TARGET_COLOR_TEMP,LED_MODE_ROOM,LED_MODE_SCENE,ACTION_STATEFUL_SCENE,KEYPAD_SEETOUCH,KEYPAD_SEETOUCH_HYBRID,KEYPAD_SUNNATA,KEYPAD_SUNNATA_HYBRID,KEYPAD_ALISEE,KEYPAD_PALLADIOM,KEYPAD_TABLETOP,KEYPAD_PICO,KEYPAD_GENERIC,ACTION_NONE,ACTION_RAISE,ACTION_LOWER,ACTION_TYPE_LABELS,ACTION_TYPE_DOMAINS,ACTION_TYPES_NEEDING_ENTITY,MULTI_ENTITY_ACTIONS,get_button_list,get_button_layout
+_LOGGER=logging.getLogger(__name__)
+LUTRON_TYPE_MAP={'SeeTouchKeypad':KEYPAD_SEETOUCH,'SeeTouchHybridKeypad':KEYPAD_SEETOUCH_HYBRID,'HybridSeeTouch':KEYPAD_SEETOUCH_HYBRID,'HybridSeeTouchKeypad':KEYPAD_SEETOUCH_HYBRID,'SeeTouch':KEYPAD_SEETOUCH,'SunnataKeypad':KEYPAD_SUNNATA,'SunnataHybridKeypad':KEYPAD_SUNNATA_HYBRID,'SunnataSwitchingKeypad':KEYPAD_SUNNATA,'Sunnata':KEYPAD_SUNNATA,'AlisseKeypad':KEYPAD_ALISEE,'AlisseSeeTouchKeypad':KEYPAD_ALISEE,'Alisse':KEYPAD_ALISEE,'AliseeKeypad':KEYPAD_ALISEE,'AliseeSeeTouchKeypad':KEYPAD_ALISEE,'Alisee':KEYPAD_ALISEE,'GrafikEyeQS':KEYPAD_ALISEE,'GRAFIK Eye QS':KEYPAD_ALISEE,'PalladiomKeypad':KEYPAD_PALLADIOM,'PalladiomKeypad2Button':KEYPAD_PALLADIOM,'PalladiomKeypad3Button':KEYPAD_PALLADIOM,'PalladiomKeypad4Button':KEYPAD_PALLADIOM,'PalladiomKeypad5Button':KEYPAD_PALLADIOM,'PalladiomKeypad7Button':KEYPAD_PALLADIOM,'Palladiom':KEYPAD_PALLADIOM,'PalladiomWirelessKeypad':KEYPAD_PALLADIOM,'PalladiomSeeTouchKeypad':KEYPAD_PALLADIOM,'PalladiomHybridKeypad':KEYPAD_PALLADIOM,'TabletopSeeTouch':KEYPAD_TABLETOP,'SeeTouchTabletop':KEYPAD_TABLETOP,'TabletopKeypad':KEYPAD_TABLETOP,'Pico1Button':KEYPAD_PICO,'Pico2Button':KEYPAD_PICO,'Pico2ButtonRaiseLower':KEYPAD_PICO,'Pico3Button':KEYPAD_PICO,'Pico3ButtonRaiseLower':KEYPAD_PICO,'Pico4Button':KEYPAD_PICO,'Pico4ButtonScene':KEYPAD_PICO,'Pico4ButtonZone':KEYPAD_PICO,'Pico4Button2Group':KEYPAD_PICO,'FourGroupRemote':KEYPAD_PICO,'PaddleRemote':KEYPAD_PICO}
+LUTRON_TYPE_FUZZY=[('aliss',KEYPAD_ALISEE),(_h,KEYPAD_ALISEE),(_i,KEYPAD_PALLADIOM),(_j,KEYPAD_SUNNATA),(_k,KEYPAD_SEETOUCH_HYBRID),(_l,KEYPAD_SEETOUCH),(_m,KEYPAD_TABLETOP),('pico',KEYPAD_PICO),(_n,KEYPAD_PICO),(_o,KEYPAD_SEETOUCH)]
+BUTTON_TYPE_KEYWORDS={_o,'pico',_n,_l,_j,'aliss',_h,_i,_m,_k}
+def _infer_keypad_type(device_type):
+	A=device_type
+	if A in LUTRON_TYPE_MAP:return LUTRON_TYPE_MAP[A]
+	C=A.lower()
+	for(D,B)in LUTRON_TYPE_FUZZY:
+		if D in C:_LOGGER.debug('Fuzzy-matched device type %r → %s',A,B);return B
+	_LOGGER.warning('Unrecognized Lutron device type %r — falling back to generic keypad',A);return KEYPAD_GENERIC
+def _is_keypad_device(device):
+	A=device.get(_G,'')
+	if A in LUTRON_TYPE_MAP:return True
+	B=A.lower();return any(A in B for A in BUTTON_TYPE_KEYWORDS)
+def _iter_lutron_bridges(hass):
+	D='bridge'
+	for C in hass.config_entries.async_entries(_L):
+		if C.state is not ConfigEntryState.LOADED:continue
+		E=getattr(C,'runtime_data',_A)
+		if E is not _A:
+			A=getattr(E,D,_A)
+			if A is not _A:yield A;continue
+		B=hass.data.get(_L,{}).get(C.entry_id)
+		if B is not _A:
+			A=getattr(B,D,_A)
+			if A is _A and isinstance(B,dict):A=B.get(D)
+			if A is not _A:yield A
+def _get_lutron_bridge(hass):return next(_iter_lutron_bridges(hass),_A)
+def _discover_keypads(hass):
+	D=set();B=[]
+	for E in _iter_lutron_bridges(hass):
+		try:F=E.get_devices()
+		except Exception as G:_LOGGER.warning('Could not query Lutron bridge devices: %s',G);continue
+		for C in F.values():
+			if not _is_keypad_device(C):continue
+			A=str(C.get(_C,''))
+			if A and A in D:continue
+			B.append(C)
+			if A:D.add(A)
+	B.sort(key=lambda d:(d.get(_J,''),d.get(_B,'')));return B
+def _build_device_options(keypads):
+	B={}
+	for A in keypads:
+		C=str(A.get(_C,''))
+		if not C:continue
+		D=A.get(_J,'Unknown Area');E=A.get(_B,'Unknown');F=_infer_keypad_type(A.get(_G,''));B[C]=f"{D} — {E}  [{F}]"
+	return B
+def _resolve_btn_num(bd):
+	for B in(_M,_N):
+		A=bd.get(B)
+		if A is not _A:
+			try:return int(A)
+			except(TypeError,ValueError):pass
+def _strip_engraving(full_name,area,device):
+	D=device;C=full_name;A=C.strip()
+	for B in[f"{area} {D}",D,area]:
+		B=B.strip()
+		if B and A.lower().startswith(B.lower()):A=A[len(B):].strip();break
+	return A.title()if A else C.strip()
 import re as _re_cf
-
-_RAISE_NAME_RE = _re_cf.compile(r"\braise\b", _re_cf.IGNORECASE)
-_LOWER_NAME_RE = _re_cf.compile(r"\blower\b", _re_cf.IGNORECASE)
-
-
-def _build_layout_from_button_devices(
-    candidates: list[dict], area_name: str, device_name: str
-) -> dict:
-    """Build a button layout dict from button_devices entries (RA3 / LEAP / RadioRA2)."""
-    button_numbers: list[int] = sorted({
-        n for bd in candidates
-        if (n := _resolve_btn_num(bd)) is not None
-    })
-    if not button_numbers:
-        return {}
-
-    raise_btn: int | None = None
-    lower_btn: int | None = None
-    button_names: dict[str, str] = {}
-    leap_button_map: dict[str, int] = {}
-
-    for bd in candidates:
-        raw_name = bd.get("name", "")
-        name_lc  = raw_name.lower()
-        bnum = _resolve_btn_num(bd)
-
-        leap_raw = bd.get("leap_button_number")
-        if bnum is not None and leap_raw is not None:
-            try:
-                leap_int = int(leap_raw)
-                if leap_int != bnum:
-                    leap_button_map[str(leap_int)] = bnum
-            except (TypeError, ValueError):
-                pass
-
-        if bnum is None:
-            continue
-        if (name_lc.endswith((" raise", "-raise", " up", "-up"))
-                or _RAISE_NAME_RE.search(raw_name)):
-            raise_btn = bnum
-        elif (name_lc.endswith((" lower", "-lower", " down", "-down"))
-                or _LOWER_NAME_RE.search(raw_name)):
-            lower_btn = bnum
-        engraving = _strip_engraving(raw_name, area_name, device_name)
-        if engraving:
-            button_names[str(bnum)] = engraving
-
-    configurable = [n for n in button_numbers if n not in (raise_btn, lower_btn)]
-
-    _LOGGER.debug(
-        "button_devices layout: %d total, configurable=%s raise=%s lower=%s "
-        "names=%s leap_map=%s",
-        len(button_numbers), configurable, raise_btn, lower_btn,
-        button_names, leap_button_map,
-    )
-    return {
-        "button_numbers":       button_numbers,
-        "configurable_buttons": configurable,
-        "raise_button":         raise_btn,
-        "lower_button":         lower_btn,
-        "button_names":         button_names,
-        "leap_button_map":      leap_button_map,
-    }
-
-
-def _build_layout_from_inline_buttons(
-    buttons_list: list[dict],
-    area_name: str,
-    device_name: str,
-    device_full_name: str = "",
-) -> dict:
-    """Build a layout dict from the inline 'buttons' list inside a device dict.
-
-    Caseta Pro (SmartBridge) exposes no button_devices attribute; instead each
-    device returned by get_devices() carries a 'buttons' list.  Events on
-    Caseta Pro use sequential button_number values that match the list, so no
-    LEAP remap is usually needed — but we capture it when present.
-    """
-    button_numbers: list[int] = []
-    raise_btn: int | None = None
-    lower_btn: int | None = None
-    button_names: dict[str, str] = {}
-    leap_button_map: dict[str, int] = {}
-
-    name_for_strip = device_name or device_full_name
-
-    for btn in buttons_list:
-        bnum_raw = btn.get("button_number")
-        if bnum_raw is None:
-            continue
-        try:
-            bnum = int(bnum_raw)
-        except (TypeError, ValueError):
-            continue
-
-        raw_name = btn.get("name", "")
-        name_lc  = raw_name.lower()
-
-        if (name_lc.endswith((" raise", "-raise", " up", "-up"))
-                or _RAISE_NAME_RE.search(raw_name)):
-            raise_btn = bnum
-        elif (name_lc.endswith((" lower", "-lower", " down", "-down"))
-                or _LOWER_NAME_RE.search(raw_name)):
-            lower_btn = bnum
-
-        button_numbers.append(bnum)
-
-        engraving = _strip_engraving(raw_name, area_name, name_for_strip)
-        if engraving:
-            button_names[str(bnum)] = engraving
-
-        # Some Caseta Pro devices also expose leap_button_number
-        leap_raw = btn.get("leap_button_number")
-        if leap_raw is not None:
-            try:
-                leap_int = int(leap_raw)
-                if leap_int != bnum:
-                    leap_button_map[str(leap_int)] = bnum
-            except (TypeError, ValueError):
-                pass
-
-    button_numbers = sorted(set(button_numbers))
-    configurable   = [n for n in button_numbers if n not in (raise_btn, lower_btn)]
-
-    _LOGGER.debug(
-        "inline-buttons layout: %d total, configurable=%s raise=%s lower=%s "
-        "names=%s leap_map=%s",
-        len(button_numbers), configurable, raise_btn, lower_btn,
-        button_names, leap_button_map,
-    )
-    return {
-        "button_numbers":       button_numbers,
-        "configurable_buttons": configurable,
-        "raise_button":         raise_btn,
-        "lower_button":         lower_btn,
-        "button_names":         button_names,
-        "leap_button_map":      leap_button_map,
-    }
-
-
-def _build_layout_from_bridge_buttons(
-    candidates: list[dict], area_name: str, device_name: str,
-    has_raise_lower: bool = True,
-) -> dict:
-    """Build a layout dict from bridge.buttons entries (HomeWorks QSX / RA3).
-
-    bridge.buttons entries carry a 'button_led' field:
-      - button_led is not None → button has an LED entity → configurable scene button
-      - button_led is None     → button has no LED       → raise/lower candidate
-
-    Raise/lower detection via button_led is only applied when has_raise_lower=True.
-    Alisee and Pico keypads must pass has_raise_lower=False — Alisee has no
-    raise/lower rocker, and Pico has no LEDs on any button.
-
-    Lutron assigns odd button numbers to raise and even to lower within each pair.
-    """
-    button_numbers: list[int] = []
-    raise_btn: int | None = None
-    lower_btn: int | None = None
-    button_names: dict[str, str] = {}
-    no_led_buttons: list[int] = []
-
-    for btn in candidates:
-        bnum_raw = btn.get("button_number")
-        if bnum_raw is None:
-            continue
-        try:
-            bnum = int(bnum_raw)
-        except (TypeError, ValueError):
-            continue
-
-        raw_name = btn.get("button_name") or btn.get("name", "")
-        name_lc  = raw_name.lower()
-        has_led  = btn.get("button_led") is not None
-
-        if has_raise_lower:
-            if (name_lc.endswith((" raise", "-raise", " up", "-up"))
-                    or _RAISE_NAME_RE.search(raw_name)):
-                raise_btn = bnum
-            elif (name_lc.endswith((" lower", "-lower", " down", "-down"))
-                    or _LOWER_NAME_RE.search(raw_name)):
-                lower_btn = bnum
-            elif not has_led:
-                no_led_buttons.append(bnum)
-
-        button_numbers.append(bnum)
-        engraving = _strip_engraving(raw_name, area_name, device_name)
-        if engraving:
-            button_names[str(bnum)] = engraving
-
-    if has_raise_lower:
-        # Assign raise/lower from no-LED buttons (Lutron convention: odd=raise, even=lower)
-        for n in sorted(no_led_buttons):
-            if n % 2 == 1 and raise_btn is None:
-                raise_btn = n
-            elif n % 2 == 0 and lower_btn is None:
-                lower_btn = n
-        # Sequential fallback when all no-LED buttons share the same parity
-        for n in sorted(no_led_buttons):
-            if raise_btn is None and n != lower_btn:
-                raise_btn = n
-            elif lower_btn is None and n != raise_btn:
-                lower_btn = n
-
-    button_numbers = sorted(set(button_numbers))
-    configurable   = [n for n in button_numbers if n not in (raise_btn, lower_btn)]
-
-    _LOGGER.debug(
-        "bridge.buttons layout: %d total, configurable=%s raise=%s lower=%s names=%s",
-        len(button_numbers), configurable, raise_btn, lower_btn, button_names,
-    )
-    return {
-        "button_numbers":       button_numbers,
-        "configurable_buttons": configurable,
-        "raise_button":         raise_btn,
-        "lower_button":         lower_btn,
-        "button_names":         button_names,
-        "leap_button_map":      {},
-    }
-
-
-def _detect_button_layout(
-    hass: HomeAssistant,
-    serial: str,
-    keypad_type: str,
-    device_name: str = "",
-    area_name: str = "",
-    device_id: str = "",
-    device_data: dict | None = None,
-) -> dict:
-    """Detect the actual button layout for a keypad device.
-
-    Tries three strategies in order across every loaded lutron_caseta bridge:
-
-      Strategy 1 — bridge.button_devices (older RA3 / LEAP / RadioRA2):
-        A flat dict keyed by button device ID; each entry has both
-        button_number and leap_button_number.
-
-      Strategy 2 — inline 'buttons' list in the device dict from get_devices()
-        (Caseta Pro / SmartBridge):
-        Caseta Pro embeds the button list inside each device dict.
-
-      Strategy 3 — bridge.buttons (HomeWorks QSX / RA3 LEAP):
-        A flat dict of every button on the bridge; match by serial or
-        parent_device == the keypad's device_id.
-
-    Returns a layout dict on success, or {} to let the caller fall back to the
-    static family-based button count.
-    """
-    for bridge in _iter_lutron_bridges(hass):
-        # ── Strategy 1: button_devices (older RA3 / LEAP) ────────────────────
-        button_devices: dict = getattr(bridge, "button_devices", None) or {}
-        if button_devices:
-            candidates = [
-                bd for bd in button_devices.values()
-                if (serial and str(bd.get("serial", "")) == serial)
-                or (device_id and str(bd.get("device_id", "")) == device_id)
-            ]
-            if candidates:
-                _LOGGER.debug(
-                    "Strategy 1 (button_devices): %d entries for serial=%s device_id=%s",
-                    len(candidates), serial, device_id,
-                )
-                return _build_layout_from_button_devices(candidates, area_name, device_name)
-
-        # ── Locate the keypad device on this bridge ───────────────────────────
-        our_device: dict | None = device_data  # use pre-fetched dict when available
-        if our_device is None:
-            try:
-                all_devs: dict = bridge.get_devices()
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.warning("bridge.get_devices() failed during layout detection: %s", exc)
-                continue
-            for d in all_devs.values():
-                if (serial and str(d.get("serial", "")) == serial) \
-                        or (device_id and str(d.get("device_id", "")) == device_id):
-                    our_device = d
-                    break
-
-        if our_device is None:
-            continue  # Not on this bridge; try next
-
-        found_device_id = str(our_device.get("device_id", "")) or device_id
-
-        _LOGGER.debug(
-            "Device serial=%s on bridge %s — type=%r model=%r device_id=%s "
-            "inline_buttons=%d button_devices_total=%d",
-            serial, type(bridge).__name__,
-            our_device.get("type"), our_device.get("model"), found_device_id,
-            len(our_device.get("buttons", [])), len(button_devices),
-        )
-
-        # ── Strategy 2: inline 'buttons' in device dict (Caseta Pro) ─────────
-        inline: list[dict] = our_device.get("buttons", [])
-        if inline:
-            _LOGGER.debug(
-                "Strategy 2 (inline buttons): %d buttons for serial=%s",
-                len(inline), serial,
-            )
-            return _build_layout_from_inline_buttons(
-                inline, area_name, device_name, our_device.get("name", ""),
-            )
-
-        # ── Strategy 3: bridge.buttons (HomeWorks QSX / RA3 LEAP) ────────────
-        all_bridge_buttons: dict = getattr(bridge, "buttons", None) or {}
-        if all_bridge_buttons:
-            btn_candidates = [
-                b for b in all_bridge_buttons.values()
-                if (serial and str(b.get("serial", "")) == serial)
-                or (found_device_id and str(b.get("parent_device", "")) == found_device_id)
-            ]
-            if btn_candidates:
-                _LOGGER.debug(
-                    "Strategy 3 (bridge.buttons): %d buttons for serial=%s device_id=%s",
-                    len(btn_candidates), serial, found_device_id,
-                )
-                from .const import KEYPAD_LAYOUTS, KEYPAD_GENERIC
-                _, has_rl = KEYPAD_LAYOUTS.get(keypad_type, KEYPAD_LAYOUTS[KEYPAD_GENERIC])
-                return _build_layout_from_bridge_buttons(
-                    btn_candidates, area_name, device_name, has_raise_lower=has_rl,
-                )
-
-        # Device found but no button data at all — log for diagnosis
-        _LOGGER.warning(
-            "Device serial=%s (type=%r model=%r device_id=%s) found on bridge but "
-            "carries no button data (button_devices=%d, inline_buttons=0, "
-            "bridge.buttons=%d). Full device info: %s",
-            serial, our_device.get("type"), our_device.get("model"), found_device_id,
-            len(button_devices), len(all_bridge_buttons), our_device,
-        )
-        return {}
-
-    _LOGGER.debug(
-        "Device serial=%s device_id=%s not found on any bridge; "
-        "falling back to keypad-type static layout.",
-        serial, device_id,
-    )
-    return {}
-
-
-# ── Config Flow ───────────────────────────────────────────────────────────────
-
-class LutronKeypadsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle config flow for Lutron Keypad Controller."""
-
-    VERSION = 1
-
-    def __init__(self) -> None:
-        self._discovered_keypads: list[dict] = []
-        self._selected_device: dict | None = None
-        self._detected_layout: dict = {}
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        lutron_entries = self.hass.config_entries.async_entries("lutron_caseta")
-        if not lutron_entries:
-            return self.async_abort(reason="lutron_not_loaded")
-
-        if not self._discovered_keypads:
-            self._discovered_keypads = await self.hass.async_add_executor_job(
-                _discover_keypads, self.hass
-            )
-
-        if not self._discovered_keypads:
-            return await self.async_step_manual()
-
-        # Exclude keypads that already have a config entry in this domain
-        configured_serials: set[str] = {
-            entry.unique_id or ""
-            for entry in self.hass.config_entries.async_entries(DOMAIN)
-        }
-        unconfigured = [
-            d for d in self._discovered_keypads
-            if str(d.get("serial", "")) not in configured_serials
-        ]
-
-        if not unconfigured:
-            return self.async_abort(reason="already_configured")
-
-        device_options = _build_device_options(unconfigured)
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            selected_serial = user_input.get("device_serial", "")
-            self._selected_device = next(
-                (d for d in unconfigured
-                 if str(d.get("serial", "")) == selected_serial),
-                None,
-            )
-            if self._selected_device is None:
-                errors["base"] = "device_not_found"
-            else:
-                await self.async_set_unique_id(selected_serial)
-                self._abort_if_unique_id_configured()
-                # Detect actual button layout from bridge
-                serial      = str(self._selected_device.get("serial", ""))
-                ktype       = _infer_keypad_type(self._selected_device.get("type", ""))
-                self._detected_layout = _detect_button_layout(
-                    self.hass, serial, ktype,
-                    device_name=self._selected_device.get("name", ""),
-                    area_name=self._selected_device.get("area_name", ""),
-                    device_id=str(self._selected_device.get("device_id", "")),
-                    device_data=self._selected_device,
-                )
-                return await self.async_step_confirm()
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema(
-                {vol.Required("device_serial"): vol.In(device_options)}
-            ),
-            errors=errors,
-            description_placeholders={"count": str(len(unconfigured))},
-        )
-
-    async def async_step_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        device = self._selected_device
-        if device is None:
-            return await self.async_step_user()
-
-        device_type    = device.get("type", "")
-        keypad_type    = _infer_keypad_type(device_type)
-        area_name      = device.get("area_name", "")
-        device_name    = device.get("name", "")
-        serial         = str(device.get("serial", ""))
-        suggested_name = f"{area_name} — {device_name}" if area_name else device_name
-
-        if user_input is not None:
-            friendly_name = user_input.get("name", suggested_name).strip()
-            return self.async_create_entry(
-                title=friendly_name,
-                data={
-                    "name":             friendly_name,
-                    CONF_DEVICE_SERIAL: serial,
-                    CONF_DEVICE_NAME:   device_name,
-                    CONF_AREA_NAME:     area_name,
-                    CONF_KEYPAD_TYPE:   keypad_type,
-                    "lutron_type":      device_type,
-                    "model_number":     device.get("model", ""),
-                    "device_id":        device.get("device_id", ""),
-                    **self._detected_layout,
-                },
-            )
-
-        btn_nums = self._detected_layout.get("button_numbers", [])
-        if btn_nums:
-            btn_str = f"{len(btn_nums)} buttons detected from bridge"
-        else:
-            fallback = get_button_list(keypad_type)
-            btn_str  = f"{len(fallback)} buttons (estimated from keypad type)"
-
-        return self.async_show_form(
-            step_id="confirm",
-            data_schema=vol.Schema(
-                {vol.Required("name", default=suggested_name): str}
-            ),
-            description_placeholders={
-                "area":         area_name or "—",
-                "device_name":  device_name,
-                "keypad_type":  keypad_type,
-                "serial":       serial,
-                "lutron_type":  device_type,
-                "button_count": btn_str,
-            },
-        )
-
-    async def async_step_manual(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            serial = user_input.get(CONF_DEVICE_SERIAL, "").strip()
-            if not serial:
-                errors[CONF_DEVICE_SERIAL] = "serial_required"
-            else:
-                await self.async_set_unique_id(serial)
-                self._abort_if_unique_id_configured()
-                name = user_input.get("name", serial).strip()
-                return self.async_create_entry(
-                    title=name,
-                    data={
-                        "name":             name,
-                        CONF_DEVICE_SERIAL: serial,
-                        CONF_DEVICE_NAME:   user_input.get(CONF_DEVICE_NAME, ""),
-                        CONF_AREA_NAME:     user_input.get(CONF_AREA_NAME, ""),
-                        CONF_KEYPAD_TYPE:   KEYPAD_GENERIC,
-                        "lutron_type":      "",
-                    },
-                )
-
-        return self.async_show_form(
-            step_id="manual",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("name"): str,
-                    vol.Required(CONF_DEVICE_SERIAL): str,
-                    vol.Optional(CONF_DEVICE_NAME, default=""): str,
-                    vol.Optional(CONF_AREA_NAME, default=""): str,
-                }
-            ),
-            errors=errors,
-            description_placeholders={
-                "note": (
-                    "Auto-discovery failed — the Lutron bridge may not be "
-                    "reachable yet. Enter the serial manually: press any "
-                    "button on the keypad and check "
-                    "Developer Tools → Events → lutron_caseta_button_event."
-                )
-            },
-        )
-
-    async def async_step_panel(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Create an entry directly from the programming panel (no interactive flow)."""
-        if not user_input:
-            return self.async_abort(reason="no_data")
-        serial = str(user_input.get(CONF_DEVICE_SERIAL, "")).strip()
-        if not serial:
-            return self.async_abort(reason="no_serial")
-        await self.async_set_unique_id(serial)
-        self._abort_if_unique_id_configured()
-        name = str(user_input.pop("name", serial)).strip() or serial
-        return self.async_create_entry(title=name, data=user_input)
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> config_entries.OptionsFlow:
-        return LutronKeypadsOptionsFlow()
-
-
-# ── Options Flow ──────────────────────────────────────────────────────────────
-
-_ACTION_OPTIONS = [
-    {"value": k, "label": v}
-    for k, v in ACTION_TYPE_LABELS.items()
-]
-
-
+_RAISE_NAME_RE=_re_cf.compile('\\braise\\b',_re_cf.IGNORECASE)
+_LOWER_NAME_RE=_re_cf.compile('\\blower\\b',_re_cf.IGNORECASE)
+def _build_layout_from_button_devices(candidates,area_name,device_name):
+	I=candidates;B=sorted({O for A in I if(O:=_resolve_btn_num(A))is not _A})
+	if not B:return{}
+	C=_A;D=_A;F={};G={}
+	for H in I:
+		E=H.get(_B,'');J=E.lower();A=_resolve_btn_num(H);K=H.get(_N)
+		if A is not _A and K is not _A:
+			try:
+				L=int(K)
+				if L!=A:G[str(L)]=A
+			except(TypeError,ValueError):pass
+		if A is _A:continue
+		if J.endswith((_O,_P,_Q,_R))or _RAISE_NAME_RE.search(E):C=A
+		elif J.endswith((_S,_T,_U,_V))or _LOWER_NAME_RE.search(E):D=A
+		M=_strip_engraving(E,area_name,device_name)
+		if M:F[str(A)]=M
+	N=[A for A in B if A not in(C,D)];_LOGGER.debug('button_devices layout: %d total, configurable=%s raise=%s lower=%s names=%s leap_map=%s',len(B),N,C,D,F,G);return{_K:B,_W:N,_X:C,_Y:D,_I:F,_Z:G}
+def _build_layout_from_inline_buttons(buttons_list,area_name,device_name,device_full_name=''):
+	A=[];C=_A;D=_A;F={};G={};O=device_name or device_full_name
+	for H in buttons_list:
+		I=H.get(_M)
+		if I is _A:continue
+		try:B=int(I)
+		except(TypeError,ValueError):continue
+		E=H.get(_B,'');J=E.lower()
+		if J.endswith((_O,_P,_Q,_R))or _RAISE_NAME_RE.search(E):C=B
+		elif J.endswith((_S,_T,_U,_V))or _LOWER_NAME_RE.search(E):D=B
+		A.append(B);K=_strip_engraving(E,area_name,O)
+		if K:F[str(B)]=K
+		L=H.get(_N)
+		if L is not _A:
+			try:
+				M=int(L)
+				if M!=B:G[str(M)]=B
+			except(TypeError,ValueError):pass
+	A=sorted(set(A));N=[A for A in A if A not in(C,D)];_LOGGER.debug('inline-buttons layout: %d total, configurable=%s raise=%s lower=%s names=%s leap_map=%s',len(A),N,C,D,F,G);return{_K:A,_W:N,_X:C,_Y:D,_I:F,_Z:G}
+def _build_layout_from_bridge_buttons(candidates,area_name,device_name,has_raise_lower=True):
+	J=has_raise_lower;D=[];A=_A;B=_A;H={};I=[]
+	for F in candidates:
+		K=F.get(_M)
+		if K is _A:continue
+		try:E=int(K)
+		except(TypeError,ValueError):continue
+		G=F.get('button_name')or F.get(_B,'');L=G.lower();O=F.get('button_led')is not _A
+		if J:
+			if L.endswith((_O,_P,_Q,_R))or _RAISE_NAME_RE.search(G):A=E
+			elif L.endswith((_S,_T,_U,_V))or _LOWER_NAME_RE.search(G):B=E
+			elif not O:I.append(E)
+		D.append(E);M=_strip_engraving(G,area_name,device_name)
+		if M:H[str(E)]=M
+	if J:
+		for C in sorted(I):
+			if C%2==1 and A is _A:A=C
+			elif C%2==0 and B is _A:B=C
+		for C in sorted(I):
+			if A is _A and C!=B:A=C
+			elif B is _A and C!=A:B=C
+	D=sorted(set(D));N=[C for C in D if C not in(A,B)];_LOGGER.debug('bridge.buttons layout: %d total, configurable=%s raise=%s lower=%s names=%s',len(D),N,A,B,H);return{_K:D,_W:N,_X:A,_Y:B,_I:H,_Z:{}}
+def _detect_button_layout(hass,serial,keypad_type,device_name='',area_name='',device_id='',device_data=_A):
+	H=area_name;G=device_name;C=device_id;A=serial
+	for E in _iter_lutron_bridges(hass):
+		F=getattr(E,'button_devices',_A)or{}
+		if F:
+			I=[B for B in F.values()if A and str(B.get(_C,''))==A or C and str(B.get(_H,''))==C]
+			if I:_LOGGER.debug('Strategy 1 (button_devices): %d entries for serial=%s device_id=%s',len(I),A,C);return _build_layout_from_button_devices(I,H,G)
+		B=device_data
+		if B is _A:
+			try:O=E.get_devices()
+			except Exception as P:_LOGGER.warning('bridge.get_devices() failed during layout detection: %s',P);continue
+			for J in O.values():
+				if A and str(J.get(_C,''))==A or C and str(J.get(_H,''))==C:B=J;break
+		if B is _A:continue
+		D=str(B.get(_H,''))or C;_LOGGER.debug('Device serial=%s on bridge %s — type=%r model=%r device_id=%s inline_buttons=%d button_devices_total=%d',A,type(E).__name__,B.get(_G),B.get(_a),D,len(B.get(_E,[])),len(F));K=B.get(_E,[])
+		if K:_LOGGER.debug('Strategy 2 (inline buttons): %d buttons for serial=%s',len(K),A);return _build_layout_from_inline_buttons(K,H,G,B.get(_B,''))
+		L=getattr(E,_E,_A)or{}
+		if L:
+			M=[B for B in L.values()if A and str(B.get(_C,''))==A or D and str(B.get('parent_device',''))==D]
+			if M:_LOGGER.debug('Strategy 3 (bridge.buttons): %d buttons for serial=%s device_id=%s',len(M),A,D);from.const import KEYPAD_LAYOUTS as N,KEYPAD_GENERIC as Q;S,R=N.get(keypad_type,N[Q]);return _build_layout_from_bridge_buttons(M,H,G,has_raise_lower=R)
+		_LOGGER.warning('Device serial=%s (type=%r model=%r device_id=%s) found on bridge but carries no button data (button_devices=%d, inline_buttons=0, bridge.buttons=%d). Full device info: %s',A,B.get(_G),B.get(_a),D,len(F),len(L),B);return{}
+	_LOGGER.debug('Device serial=%s device_id=%s not found on any bridge; falling back to keypad-type static layout.',A,C);return{}
+class LutronKeypadsConfigFlow(config_entries.ConfigFlow,domain=DOMAIN):
+	VERSION=1
+	def __init__(A):A._discovered_keypads=[];A._selected_device=_A;A._detected_layout={}
+	async def async_step_user(A,user_input=_A):
+		F='device_serial';C=user_input;G=A.hass.config_entries.async_entries(_L)
+		if not G:return A.async_abort(reason='lutron_not_loaded')
+		if not A._discovered_keypads:A._discovered_keypads=await A.hass.async_add_executor_job(_discover_keypads,A.hass)
+		if not A._discovered_keypads:return await A.async_step_manual()
+		H={A.unique_id or''for A in A.hass.config_entries.async_entries(DOMAIN)};B=[A for A in A._discovered_keypads if str(A.get(_C,''))not in H]
+		if not B:return A.async_abort(reason='already_configured')
+		I=_build_device_options(B);D={}
+		if C is not _A:
+			E=C.get(F,'');A._selected_device=next((A for A in B if str(A.get(_C,''))==E),_A)
+			if A._selected_device is _A:D['base']='device_not_found'
+			else:await A.async_set_unique_id(E);A._abort_if_unique_id_configured();J=str(A._selected_device.get(_C,''));K=_infer_keypad_type(A._selected_device.get(_G,''));A._detected_layout=_detect_button_layout(A.hass,J,K,device_name=A._selected_device.get(_B,''),area_name=A._selected_device.get(_J,''),device_id=str(A._selected_device.get(_H,'')),device_data=A._selected_device);return await A.async_step_confirm()
+		return A.async_show_form(step_id='user',data_schema=vol.Schema({vol.Required(F):vol.In(I)}),errors=D,description_placeholders={'count':str(len(B))})
+	async def async_step_confirm(B,user_input=_A):
+		G=user_input;A=B._selected_device
+		if A is _A:return await B.async_step_user()
+		E=A.get(_G,'');F=_infer_keypad_type(E);C=A.get(_J,'');D=A.get(_B,'');H=str(A.get(_C,''));I=f"{C} — {D}"if C else D
+		if G is not _A:J=G.get(_B,I).strip();return B.async_create_entry(title=J,data={_B:J,CONF_DEVICE_SERIAL:H,CONF_DEVICE_NAME:D,CONF_AREA_NAME:C,CONF_KEYPAD_TYPE:F,_b:E,'model_number':A.get(_a,''),_H:A.get(_H,''),**B._detected_layout})
+		K=B._detected_layout.get(_K,[])
+		if K:L=f"{len(K)} buttons detected from bridge"
+		else:M=get_button_list(F);L=f"{len(M)} buttons (estimated from keypad type)"
+		return B.async_show_form(step_id='confirm',data_schema=vol.Schema({vol.Required(_B,default=I):str}),description_placeholders={'area':C or'—','device_name':D,'keypad_type':F,_C:H,_b:E,'button_count':L})
+	async def async_step_manual(B,user_input=_A):
+		A=user_input;D={}
+		if A is not _A:
+			C=A.get(CONF_DEVICE_SERIAL,'').strip()
+			if not C:D[CONF_DEVICE_SERIAL]='serial_required'
+			else:await B.async_set_unique_id(C);B._abort_if_unique_id_configured();E=A.get(_B,C).strip();return B.async_create_entry(title=E,data={_B:E,CONF_DEVICE_SERIAL:C,CONF_DEVICE_NAME:A.get(CONF_DEVICE_NAME,''),CONF_AREA_NAME:A.get(CONF_AREA_NAME,''),CONF_KEYPAD_TYPE:KEYPAD_GENERIC,_b:''})
+		return B.async_show_form(step_id='manual',data_schema=vol.Schema({vol.Required(_B):str,vol.Required(CONF_DEVICE_SERIAL):str,vol.Optional(CONF_DEVICE_NAME,default=''):str,vol.Optional(CONF_AREA_NAME,default=''):str}),errors=D,description_placeholders={'note':'Auto-discovery failed — the Lutron bridge may not be reachable yet. Enter the serial manually: press any button on the keypad and check Developer Tools → Events → lutron_caseta_button_event.'})
+	async def async_step_panel(A,user_input=_A):
+		B=user_input
+		if not B:return A.async_abort(reason='no_data')
+		C=str(B.get(CONF_DEVICE_SERIAL,'')).strip()
+		if not C:return A.async_abort(reason='no_serial')
+		await A.async_set_unique_id(C);A._abort_if_unique_id_configured();D=str(B.pop(_B,C)).strip()or C;return A.async_create_entry(title=D,data=B)
+	@staticmethod
+	@callback
+	def async_get_options_flow(config_entry):return LutronKeypadsOptionsFlow()
+_ACTION_OPTIONS=[{_c:A,_F:B}for(A,B)in ACTION_TYPE_LABELS.items()]
 class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
-    """Two-step options wizard matching the rfwc5 pattern.
-
-    Step 1 (buttons): all configurable buttons shown at once — label + action type.
-    Step 2 (entities): entity pickers for every button that needs a target.
-    """
-
-    def __init__(self) -> None:
-        self._buttons_config: dict[int, dict] = {}
-
-    # ── Helpers ───────────────────────────────────────────────────────────────
-
-    def _get_all_buttons(self) -> list[dict]:
-        return get_button_layout(self.config_entry.data)
-
-    def _get_configurable(self) -> list[dict]:
-        return [b for b in self._get_all_buttons() if not b["is_raise"] and not b["is_lower"]]
-
-    def _get_raise_lower_note(self) -> str:
-        parts = []
-        for b in self._get_all_buttons():
-            if b["is_raise"]:
-                parts.append(f"Button {b['number']} (Raise)")
-            elif b["is_lower"]:
-                parts.append(f"Button {b['number']} (Lower)")
-        if not parts:
-            return ""
-        return f"{', '.join(parts)} are fixed raise/lower buttons and cannot be reassigned."
-
-    def _get_led_bindings_note(self) -> str:
-        """Return a markdown block listing auto-discovered LED bindings, or ''."""
-        ctrl = (
-            self.hass.data.get(DOMAIN, {})
-            .get("entry_controllers", {})
-            .get(self.config_entry.entry_id)
-        )
-        if ctrl is None or not ctrl._led_map:
-            return ""
-        lines = ["\n\n**Auto-discovered LED bindings:**"]
-        for btn_num in sorted(ctrl._led_map):
-            # Prefer the user-configured label; fall back to saved engraving name
-            btn_cfg = ctrl._buttons.get(btn_num, {})
-            saved_names: dict[str, str] = self.config_entry.data.get("button_names", {})
-            label = (
-                btn_cfg.get("label")
-                or self._buttons_config.get(btn_num, {}).get("label")
-                or saved_names.get(str(btn_num))
-                or f"Button {btn_num}"
-            )
-            lines.append(f"- {label} (button #{btn_num}) → `{ctrl._led_map[btn_num]}`")
-        return "\n".join(lines)
-
-    def _normalize_target(self, target: Any) -> list[str]:
-        if isinstance(target, list):
-            return [str(e).strip() for e in target if str(e).strip()]
-        if isinstance(target, str) and target.strip():
-            return [e.strip() for e in target.split(",") if e.strip()]
-        return []
-
-    def _default_entity(self, cfg: dict, multiple: bool) -> Any:
-        raw = cfg.get(CONF_ACTION_TARGET, "")
-        if multiple:
-            return raw if isinstance(raw, list) else self._normalize_target(raw)
-        if isinstance(raw, list):
-            return raw[0] if raw else ""
-        return raw or ""
-
-    # ── Step 1 — Configure all buttons ───────────────────────────────────────
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """First options step: show panel link, then continue to wizard on submit."""
-        if user_input is not None:
-            return await self.async_step_buttons()
-
-        entry_id = self.config_entry.entry_id
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema({}),
-            description_placeholders={
-                "panel_url": f"/lutron-keypads?entry={entry_id}",
-                "keypad_name": self.config_entry.title,
-            },
-        )
-
-    async def async_step_buttons(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        # Seed from existing options on first visit
-        if not self._buttons_config:
-            saved = self.config_entry.options.get("buttons", {})
-            for k, v in saved.items():
-                try:
-                    self._buttons_config[int(k)] = dict(v)
-                except (ValueError, TypeError):
-                    pass
-
-        configurable = self._get_configurable()
-        keypad_name = self.config_entry.data.get("name", "Keypad")
-
-        if user_input is not None:
-            for btn in configurable:
-                n = btn["number"]
-                old_cfg = self._buttons_config.get(n, {})
-                new_action = user_input.get(f"button_{n}_action_type", ACTION_NONE)
-                self._buttons_config[n] = {
-                    **old_cfg,
-                    "label": user_input.get(f"button_{n}_label", f"Button {n}"),
-                    CONF_ACTION_TYPE: new_action,
-                }
-                if new_action not in ACTION_TYPES_NEEDING_ENTITY:
-                    self._buttons_config[n][CONF_ACTION_TARGET] = []
-                    self._buttons_config[n][CONF_LED_ENTITY] = ""
-                    self._buttons_config[n]["scene_group"] = ""
-
-            # Preserve raise/lower entries
-            for btn in self._get_all_buttons():
-                if btn["is_raise"]:
-                    self._buttons_config[btn["number"]] = {"label": "Raise", CONF_ACTION_TYPE: ACTION_RAISE}
-                elif btn["is_lower"]:
-                    self._buttons_config[btn["number"]] = {"label": "Lower", CONF_ACTION_TYPE: ACTION_LOWER}
-
-            needs_entity = any(
-                self._buttons_config.get(b["number"], {}).get(CONF_ACTION_TYPE) in ACTION_TYPES_NEEDING_ENTITY
-                for b in configurable
-            )
-            if needs_entity:
-                return await self.async_step_entities()
-            return self.async_create_entry(
-                title="",
-                data={"buttons": {str(k): v for k, v in self._buttons_config.items()}},
-            )
-
-        button_names: dict[str, str] = self.config_entry.data.get("button_names", {})
-        schema_dict: dict = {}
-        for btn in configurable:
-            n = btn["number"]
-            cfg = self._buttons_config.get(n, {})
-            engraving = button_names.get(str(n), f"Button {n}")
-            schema_dict[vol.Optional(f"button_{n}_label", default=cfg.get("label") or engraving)] = (
-                selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT))
-            )
-            schema_dict[vol.Required(f"button_{n}_action_type", default=cfg.get(CONF_ACTION_TYPE, ACTION_NONE))] = (
-                selector.SelectSelector(selector.SelectSelectorConfig(
-                    options=_ACTION_OPTIONS,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                ))
-            )
-
-        return self.async_show_form(
-            step_id="buttons",
-            data_schema=vol.Schema(schema_dict),
-            description_placeholders={
-                "keypad_name":      keypad_name,
-                "raise_lower_note": self._get_raise_lower_note(),
-                "led_bindings":     self._get_led_bindings_note(),
-            },
-        )
-
-    # ── Step 2 — Entity assignment ────────────────────────────────────────────
-
-    async def async_step_entities(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        configurable = self._get_configurable()
-        active = [
-            b for b in configurable
-            if self._buttons_config.get(b["number"], {}).get(CONF_ACTION_TYPE) in ACTION_TYPES_NEEDING_ENTITY
-        ]
-        keypad_name = self.config_entry.data.get("name", "Keypad")
-
-        if not active:
-            return self.async_create_entry(
-                title="",
-                data={"buttons": {str(k): v for k, v in self._buttons_config.items()}},
-            )
-
-        if user_input is not None:
-            for btn in active:
-                n = btn["number"]
-                action_type = self._buttons_config[n][CONF_ACTION_TYPE]
-                multiple = action_type in MULTI_ENTITY_ACTIONS
-                raw = user_input.get(f"button_{n}_entity", [] if multiple else "")
-                self._buttons_config[n][CONF_ACTION_TARGET] = (
-                    (raw if isinstance(raw, list) else self._normalize_target(raw))
-                    if multiple else raw
-                )
-                self._buttons_config[n][CONF_LED_INVERT] = bool(user_input.get(f"button_{n}_led_invert", False))
-                if action_type == ACTION_ENTITY_TOGGLE:
-                    self._buttons_config[n][CONF_LED_MODE] = user_input.get(f"button_{n}_led_mode", LED_MODE_ROOM)
-                    self._buttons_config[n][CONF_TARGET_BRIGHTNESS] = int(user_input.get(f"button_{n}_target_brightness") or 0)
-                    self._buttons_config[n][CONF_TARGET_COLOR_TEMP] = int(user_input.get(f"button_{n}_target_color_temp") or 0)
-                if action_type == ACTION_STATEFUL_SCENE:
-                    self._buttons_config[n][CONF_LED_ENTITY] = user_input.get(f"button_{n}_led", "")
-                    sg = user_input.get(f"button_{n}_scene_group", "")
-                    self._buttons_config[n]["scene_group"] = sg.strip() if isinstance(sg, str) else ""
-
-            return self.async_create_entry(
-                title="",
-                data={"buttons": {str(k): v for k, v in self._buttons_config.items()}},
-            )
-
-        schema_dict: dict = {}
-        for btn in active:
-            n = btn["number"]
-            cfg = self._buttons_config.get(n, {})
-            action_type = cfg.get(CONF_ACTION_TYPE, ACTION_NONE)
-            domains = ACTION_TYPE_DOMAINS.get(action_type, [])
-            multiple = action_type in MULTI_ENTITY_ACTIONS
-
-            schema_dict[vol.Optional(f"button_{n}_entity", default=self._default_entity(cfg, multiple))] = (
-                selector.EntitySelector(selector.EntitySelectorConfig(domain=domains, multiple=multiple))
-            )
-            if action_type == ACTION_ENTITY_TOGGLE:
-                schema_dict[vol.Optional(f"button_{n}_target_brightness", default=cfg.get(CONF_TARGET_BRIGHTNESS, 0) or 0)] = (
-                    selector.NumberSelector(selector.NumberSelectorConfig(
-                        min=0, max=100, step=1,
-                        unit_of_measurement="%",
-                        mode="slider",
-                    ))
-                )
-                schema_dict[vol.Optional(f"button_{n}_target_color_temp", default=cfg.get(CONF_TARGET_COLOR_TEMP, 0) or 0)] = (
-                    selector.NumberSelector(selector.NumberSelectorConfig(
-                        min=0, max=10000, step=100,
-                        unit_of_measurement="K",
-                        mode="box",
-                    ))
-                )
-                schema_dict[vol.Optional(f"button_{n}_led_mode", default=cfg.get(CONF_LED_MODE, LED_MODE_ROOM))] = (
-                    selector.SelectSelector(selector.SelectSelectorConfig(
-                        options=[
-                            {"value": LED_MODE_ROOM,  "label": "Room Mode — LED on when any entity is on"},
-                            {"value": LED_MODE_SCENE, "label": "Scene Mode — LED on when all entities match target"},
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    ))
-                )
-            if action_type == ACTION_STATEFUL_SCENE:
-                schema_dict[vol.Optional(f"button_{n}_led", default=cfg.get(CONF_LED_ENTITY, ""))] = (
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain=["switch"], multiple=False))
-                )
-                schema_dict[vol.Optional(f"button_{n}_scene_group", default=cfg.get("scene_group", ""))] = (
-                    selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT))
-                )
-            schema_dict[vol.Optional(f"button_{n}_led_invert", default=cfg.get(CONF_LED_INVERT, False))] = (
-                selector.BooleanSelector()
-            )
-
-        return self.async_show_form(
-            step_id="entities",
-            data_schema=vol.Schema(schema_dict),
-            description_placeholders={
-                "keypad_name":  keypad_name,
-                "led_bindings": self._get_led_bindings_note(),
-            },
-        )
+	def __init__(A):A._buttons_config={}
+	def _get_all_buttons(A):return get_button_layout(A.config_entry.data)
+	def _get_configurable(A):return[A for A in A._get_all_buttons()if not A[_d]and not A[_e]]
+	def _get_raise_lower_note(C):
+		A=[]
+		for B in C._get_all_buttons():
+			if B[_d]:A.append(f"Button {B[_D]} (Raise)")
+			elif B[_e]:A.append(f"Button {B[_D]} (Lower)")
+		if not A:return''
+		return f"{", ".join(A)} are fixed raise/lower buttons and cannot be reassigned."
+	def _get_led_bindings_note(C):
+		B=C.hass.data.get(DOMAIN,{}).get('entry_controllers',{}).get(C.config_entry.entry_id)
+		if B is _A or not B._led_map:return''
+		D=['\n\n**Auto-discovered LED bindings:**']
+		for A in sorted(B._led_map):E=B._buttons.get(A,{});F=C.config_entry.data.get(_I,{});G=E.get(_F)or C._buttons_config.get(A,{}).get(_F)or F.get(str(A))or f"Button {A}";D.append(f"- {G} (button #{A}) → `{B._led_map[A]}`")
+		return'\n'.join(D)
+	def _normalize_target(B,target):
+		A=target
+		if isinstance(A,list):return[str(A).strip()for A in A if str(A).strip()]
+		if isinstance(A,str)and A.strip():return[A.strip()for A in A.split(',')if A.strip()]
+		return[]
+	def _default_entity(B,cfg,multiple):
+		A=cfg.get(CONF_ACTION_TARGET,'')
+		if multiple:return A if isinstance(A,list)else B._normalize_target(A)
+		if isinstance(A,list):return A[0]if A else''
+		return A or''
+	async def async_step_init(A,user_input=_A):B=A.config_entry.entry_id;return A.async_show_menu(step_id='init',menu_options=[_E,_p],description_placeholders={'panel_url':f"/lutron-keypads?entry={B}",_f:A.config_entry.title})
+	async def async_step_license(A,user_input=_A):
+		C=user_input;B='license_key'
+		if C is not _A:D=dict(A.config_entry.options);D[B]=C.get(B,'').strip();return A.async_create_entry(title='',data=D)
+		E=await async_get_instance_id(A.hass);F=vol.Schema({vol.Optional(B,default=A.config_entry.options.get(B,'')):str});return A.async_show_form(step_id=_p,data_schema=F,description_placeholders={'instance_id':E})
+	async def async_step_buttons(A,user_input=_A):
+		D=user_input
+		if not A._buttons_config:
+			I=A.config_entry.options.get(_E,{})
+			for(J,K)in I.items():
+				try:A._buttons_config[int(J)]=dict(K)
+				except(ValueError,TypeError):pass
+		E=A._get_configurable();L=A.config_entry.data.get(_B,_q)
+		if D is not _A:
+			for C in E:
+				B=C[_D];M=A._buttons_config.get(B,{});G=D.get(f"button_{B}_action_type",ACTION_NONE);A._buttons_config[B]={**M,_F:D.get(f"button_{B}_label",f"Button {B}"),CONF_ACTION_TYPE:G}
+				if G not in ACTION_TYPES_NEEDING_ENTITY:A._buttons_config[B][CONF_ACTION_TARGET]=[];A._buttons_config[B][CONF_LED_ENTITY]='';A._buttons_config[B][_g]=''
+			for C in A._get_all_buttons():
+				if C[_d]:A._buttons_config[C[_D]]={_F:'Raise',CONF_ACTION_TYPE:ACTION_RAISE}
+				elif C[_e]:A._buttons_config[C[_D]]={_F:'Lower',CONF_ACTION_TYPE:ACTION_LOWER}
+			N=any(A._buttons_config.get(B[_D],{}).get(CONF_ACTION_TYPE)in ACTION_TYPES_NEEDING_ENTITY for B in E)
+			if N:return await A.async_step_entities()
+			return A.async_create_entry(title='',data={_E:{str(A):B for(A,B)in A._buttons_config.items()}})
+		O=A.config_entry.data.get(_I,{});F={}
+		for C in E:B=C[_D];H=A._buttons_config.get(B,{});P=O.get(str(B),f"Button {B}");F[vol.Optional(f"button_{B}_label",default=H.get(_F)or P)]=selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT));F[vol.Required(f"button_{B}_action_type",default=H.get(CONF_ACTION_TYPE,ACTION_NONE))]=selector.SelectSelector(selector.SelectSelectorConfig(options=_ACTION_OPTIONS,mode=selector.SelectSelectorMode.DROPDOWN))
+		return A.async_show_form(step_id=_E,data_schema=vol.Schema(F),description_placeholders={_f:L,'raise_lower_note':A._get_raise_lower_note(),_r:A._get_led_bindings_note()})
+	async def async_step_entities(B,user_input=_A):
+		K=False;C=user_input;M=B._get_configurable();I=[A for A in M if B._buttons_config.get(A[_D],{}).get(CONF_ACTION_TYPE)in ACTION_TYPES_NEEDING_ENTITY];N=B.config_entry.data.get(_B,_q)
+		if not I:return B.async_create_entry(title='',data={_E:{str(A):B for(A,B)in B._buttons_config.items()}})
+		if C is not _A:
+			for J in I:
+				A=J[_D];D=B._buttons_config[A][CONF_ACTION_TYPE];G=D in MULTI_ENTITY_ACTIONS;H=C.get(f"button_{A}_entity",[]if G else'');B._buttons_config[A][CONF_ACTION_TARGET]=(H if isinstance(H,list)else B._normalize_target(H))if G else H;B._buttons_config[A][CONF_LED_INVERT]=bool(C.get(f"button_{A}_led_invert",K))
+				if D==ACTION_ENTITY_TOGGLE:B._buttons_config[A][CONF_LED_MODE]=C.get(f"button_{A}_led_mode",LED_MODE_ROOM);B._buttons_config[A][CONF_TARGET_BRIGHTNESS]=int(C.get(f"button_{A}_target_brightness")or 0);B._buttons_config[A][CONF_TARGET_COLOR_TEMP]=int(C.get(f"button_{A}_target_color_temp")or 0)
+				if D==ACTION_STATEFUL_SCENE:B._buttons_config[A][CONF_LED_ENTITY]=C.get(f"button_{A}_led",'');L=C.get(f"button_{A}_scene_group",'');B._buttons_config[A][_g]=L.strip()if isinstance(L,str)else''
+			return B.async_create_entry(title='',data={_E:{str(A):B for(A,B)in B._buttons_config.items()}})
+		E={}
+		for J in I:
+			A=J[_D];F=B._buttons_config.get(A,{});D=F.get(CONF_ACTION_TYPE,ACTION_NONE);O=ACTION_TYPE_DOMAINS.get(D,[]);G=D in MULTI_ENTITY_ACTIONS;E[vol.Optional(f"button_{A}_entity",default=B._default_entity(F,G))]=selector.EntitySelector(selector.EntitySelectorConfig(domain=O,multiple=G))
+			if D==ACTION_ENTITY_TOGGLE:E[vol.Optional(f"button_{A}_target_brightness",default=F.get(CONF_TARGET_BRIGHTNESS,0)or 0)]=selector.NumberSelector(selector.NumberSelectorConfig(min=0,max=100,step=1,unit_of_measurement='%',mode='slider'));E[vol.Optional(f"button_{A}_target_color_temp",default=F.get(CONF_TARGET_COLOR_TEMP,0)or 0)]=selector.NumberSelector(selector.NumberSelectorConfig(min=0,max=10000,step=100,unit_of_measurement='K',mode='box'));E[vol.Optional(f"button_{A}_led_mode",default=F.get(CONF_LED_MODE,LED_MODE_ROOM))]=selector.SelectSelector(selector.SelectSelectorConfig(options=[{_c:LED_MODE_ROOM,_F:'Room Mode — LED on when any entity is on'},{_c:LED_MODE_SCENE,_F:'Scene Mode — LED on when all entities match target'}],mode=selector.SelectSelectorMode.DROPDOWN))
+			if D==ACTION_STATEFUL_SCENE:E[vol.Optional(f"button_{A}_led",default=F.get(CONF_LED_ENTITY,''))]=selector.EntitySelector(selector.EntitySelectorConfig(domain=['switch'],multiple=K));E[vol.Optional(f"button_{A}_scene_group",default=F.get(_g,''))]=selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT))
+			E[vol.Optional(f"button_{A}_led_invert",default=F.get(CONF_LED_INVERT,K))]=selector.BooleanSelector()
+		return B.async_show_form(step_id='entities',data_schema=vol.Schema(E),description_placeholders={_f:N,_r:B._get_led_bindings_note()})

@@ -40,7 +40,18 @@
     "step": {
       "init": {
         "title": "Configure {keypad_name}",
-        "description": "**Recommended:** Open the visual programming panel for a Lutron Designer-like experience.\n\nNavigate to **Lutron Keypads** in the HA sidebar, or go to [{panel_url}]({panel_url})\n\nOr click **Submit** below to use the basic step-by-step wizard."
+        "description": "**Recommended:** Open the visual programming panel for a Lutron Designer-like experience.\n\nNavigate to **Lutron Keypads** in the HA sidebar, or go to [{panel_url}]({panel_url})\n\nOr choose an option below.",
+        "menu_options": {
+          "buttons": "Configure buttons (step-by-step wizard)",
+          "license": "License key"
+        }
+      },
+      "license": {
+        "title": "License",
+        "description": "Paste your Lutron Keypad Controller license key (JWT) from [portal.ctrlable.com](https://portal.ctrlable.com).\n\nThe integration will not run without a valid license. After saving, the entry reloads and the license is validated.\n\nThis Home Assistant instance ID (for instance-bound licenses): `{instance_id}`",
+        "data": {
+          "license_key": "License key"
+        }
       },
       "buttons": {
         "title": "Configure All Buttons — {keypad_name}",
