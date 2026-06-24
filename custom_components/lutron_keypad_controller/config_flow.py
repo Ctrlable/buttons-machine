@@ -288,19 +288,19 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
 				elif C[_e]:A._buttons_config[C[_D]]={_F:'Lower',CONF_ACTION_TYPE:ACTION_LOWER}
 			N=any(A._buttons_config.get(B[_D],{}).get(CONF_ACTION_TYPE)in ACTION_TYPES_NEEDING_ENTITY for B in E)
 			if N:return await A.async_step_entities()
-			return A.async_create_entry(title='',data={_E:{str(A):B for(A,B)in A._buttons_config.items()}})
+			return A.async_create_entry(title='',data={**A.config_entry.options,_E:{str(A):B for(A,B)in A._buttons_config.items()}})
 		O=A.config_entry.data.get(_I,{});F={}
 		for C in E:B=C[_D];H=A._buttons_config.get(B,{});P=O.get(str(B),f"Button {B}");F[vol.Optional(f"button_{B}_label",default=H.get(_F)or P)]=selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT));F[vol.Required(f"button_{B}_action_type",default=H.get(CONF_ACTION_TYPE,ACTION_NONE))]=selector.SelectSelector(selector.SelectSelectorConfig(options=_ACTION_OPTIONS,mode=selector.SelectSelectorMode.DROPDOWN))
 		return A.async_show_form(step_id=_E,data_schema=vol.Schema(F),description_placeholders={_f:L,'raise_lower_note':A._get_raise_lower_note(),_r:A._get_led_bindings_note()})
 	async def async_step_entities(B,user_input=_A):
 		K=False;C=user_input;M=B._get_configurable();I=[A for A in M if B._buttons_config.get(A[_D],{}).get(CONF_ACTION_TYPE)in ACTION_TYPES_NEEDING_ENTITY];N=B.config_entry.data.get(_B,_q)
-		if not I:return B.async_create_entry(title='',data={_E:{str(A):B for(A,B)in B._buttons_config.items()}})
+		if not I:return B.async_create_entry(title='',data={**B.config_entry.options,_E:{str(A):B for(A,B)in B._buttons_config.items()}})
 		if C is not _A:
 			for J in I:
 				A=J[_D];D=B._buttons_config[A][CONF_ACTION_TYPE];G=D in MULTI_ENTITY_ACTIONS;H=C.get(f"button_{A}_entity",[]if G else'');B._buttons_config[A][CONF_ACTION_TARGET]=(H if isinstance(H,list)else B._normalize_target(H))if G else H;B._buttons_config[A][CONF_LED_INVERT]=bool(C.get(f"button_{A}_led_invert",K))
 				if D==ACTION_ENTITY_TOGGLE:B._buttons_config[A][CONF_LED_MODE]=C.get(f"button_{A}_led_mode",LED_MODE_ROOM);B._buttons_config[A][CONF_TARGET_BRIGHTNESS]=int(C.get(f"button_{A}_target_brightness")or 0);B._buttons_config[A][CONF_TARGET_COLOR_TEMP]=int(C.get(f"button_{A}_target_color_temp")or 0)
 				if D==ACTION_STATEFUL_SCENE:B._buttons_config[A][CONF_LED_ENTITY]=C.get(f"button_{A}_led",'');L=C.get(f"button_{A}_scene_group",'');B._buttons_config[A][_g]=L.strip()if isinstance(L,str)else''
-			return B.async_create_entry(title='',data={_E:{str(A):B for(A,B)in B._buttons_config.items()}})
+			return B.async_create_entry(title='',data={**B.config_entry.options,_E:{str(A):B for(A,B)in B._buttons_config.items()}})
 		E={}
 		for J in I:
 			A=J[_D];F=B._buttons_config.get(A,{});D=F.get(CONF_ACTION_TYPE,ACTION_NONE);O=ACTION_TYPE_DOMAINS.get(D,[]);G=D in MULTI_ENTITY_ACTIONS;E[vol.Optional(f"button_{A}_entity",default=B._default_entity(F,G))]=selector.EntitySelector(selector.EntitySelectorConfig(domain=O,multiple=G))
