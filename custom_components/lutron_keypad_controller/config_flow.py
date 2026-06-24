@@ -235,6 +235,7 @@ class LutronKeypadsConfigFlow(config_entries.ConfigFlow,domain=DOMAIN):
 		C=str(B.get(CONF_DEVICE_SERIAL,'')).strip()
 		if not C:return A.async_abort(reason='no_serial')
 		await A.async_set_unique_id(C);A._abort_if_unique_id_configured();D=str(B.pop(_B,C)).strip()or C;return A.async_create_entry(title=D,data=B)
+	async def async_step_controller(A,user_input=_A):await A.async_set_unique_id('controller');A._abort_if_unique_id_configured();return A.async_create_entry(title='Lutron Keypad Controller',data={'_controller':True})
 	@staticmethod
 	@callback
 	def async_get_options_flow(config_entry):return LutronKeypadsOptionsFlow()

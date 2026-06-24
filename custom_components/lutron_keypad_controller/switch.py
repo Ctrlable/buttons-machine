@@ -17,9 +17,9 @@ from.const import DOMAIN,CONF_KEYPAD_TYPE,KEYPAD_GENERIC,get_button_layout
 _LOGGER=logging.getLogger(__name__)
 def _keypad_device_info(entry):A=entry;return DeviceInfo(identifiers={(DOMAIN,A.entry_id)},name=A.title,manufacturer=_D,model=A.data.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC).replace('_',' ').title(),configuration_url=f"homeassistant://lutron-keypads?entry={A.entry_id}")
 async def async_setup_entry(hass,entry,async_add_entities):
-	E='_controller_switch';B=entry;A=hass;C=[LutronButtonSwitch(A,B,C['number'],C['is_raise'],C['is_lower'])for C in get_button_layout(B.data)];D=A.data.setdefault(DOMAIN,{})
-	if not D.get(E):D[E]=B.entry_id;C.append(LutronControllerSwitch(A))
-	async_add_entities(C,_C)
+	B=async_add_entities;A=entry
+	if A.data.get('_controller'):B([LutronControllerSwitch(hass,A)]);return
+	C=[LutronButtonSwitch(hass,A,B['number'],B['is_raise'],B['is_lower'])for B in get_button_layout(A.data)];B(C,_C)
 class LutronButtonSwitch(SwitchEntity):
 	_attr_has_entity_name=_C;_attr_should_poll=_B
 	def __init__(A,hass,entry,btn_number,is_raise,is_lower):C=entry;B=btn_number;A._hass=hass;A._entry=C;A._btn_number=B;A._btn_key=str(B);A._is_raise=is_raise;A._is_lower=is_lower;A._led_state=_B;A._led_entity=_A;A._attr_unique_id=f"{C.entry_id}_button_{B}_led"
@@ -71,8 +71,8 @@ class LutronButtonSwitch(SwitchEntity):
 			except Exception as F:_LOGGER.error(_E,A._btn_number,F)
 		else:A.async_write_ha_state()
 class LutronControllerSwitch(SwitchEntity):
-	_attr_has_entity_name=_C;_attr_should_poll=_B;_attr_entity_category=EntityCategory.CONFIG;_attr_name='Show in sidebar';_attr_icon='mdi:dock-left';_attr_unique_id=f"{DOMAIN}_show_in_sidebar"
-	def __init__(A,hass):A._hass=hass;A._attr_is_on=_B
+	_attr_has_entity_name=_C;_attr_should_poll=_B;_attr_entity_category=EntityCategory.CONFIG;_attr_name='Show in sidebar';_attr_icon='mdi:dock-left'
+	def __init__(A,hass,entry):B=entry;A._hass=hass;A._entry=B;A._attr_unique_id=f"{B.entry_id}_show_in_sidebar";A._attr_is_on=_B
 	@property
 	def device_info(self):return DeviceInfo(identifiers={(DOMAIN,'controller')},name='Lutron Keypad Controller',manufacturer=_D,model='Keypad Controller',entry_type=DeviceEntryType.SERVICE,configuration_url='homeassistant://lutron-keypads')
 	async def async_added_to_hass(A):await super().async_added_to_hass();from.import _load_sidebar_show as B,async_set_sidebar as C;A._attr_is_on=await B(A._hass);C(A._hass,A._attr_is_on);A.async_write_ha_state()
