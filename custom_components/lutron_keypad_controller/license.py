@@ -1,4 +1,5 @@
 from __future__ import annotations
+_E='license_key'
 _D='instance_id'
 _C=False
 _B=True
@@ -52,6 +53,9 @@ def validate_license_offline(token,current_version=_A):
 	return LicenseResult(valid=_B,on_expire=F,grace_days=H,expires_at=B,jti=K,binding=L,instance_id=M,max_version=C,product=E)
 async def load_license_cache(hass):from homeassistant.helpers.storage import Store;A=Store(hass,_STORAGE_VERSION,_STORAGE_KEY);return await A.async_load()or{}
 async def save_license_cache(hass,jti):from homeassistant.helpers.storage import Store;A=Store(hass,_STORAGE_VERSION,_STORAGE_KEY);await A.async_save({'jti':jti,'last_ok':time.time()})
+_KEY_STORAGE_KEY='lutron_keypad_controller_license_key'
+async def remember_license_key(hass,key):from homeassistant.helpers.storage import Store;A=Store(hass,_STORAGE_VERSION,_KEY_STORAGE_KEY);await A.async_save({_E:key})
+async def recall_license_key(hass):from homeassistant.helpers.storage import Store;A=Store(hass,_STORAGE_VERSION,_KEY_STORAGE_KEY);B=await A.async_load()or{};return(B.get(_E)or'').strip()
 async def check_revocation_online(jti,instance_id=_A):
 	C=instance_id;E=_CHECK_URL.format(jti=jti);D={}
 	if C:D[_D]=C
