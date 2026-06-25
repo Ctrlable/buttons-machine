@@ -846,24 +846,21 @@ class LutronKeypadsController:
 		B=_normalize_targets(targets)
 		for C in B:D=C.split(_S)[0];await A.hass.services.async_call(D,SERVICE_TOGGLE,{ATTR_ENTITY_ID:C},blocking=_B)
 		A._last_action={_D:ACTION_ENTITY_TOGGLE,_I:B}
-	_COVER_CYCLE_WINDOW=6e1
+	_COVER_CYCLE_WINDOW=6e1;_COVER_TRAVEL_S=3e1
 	async def _cover_cycle(B,btn_num,targets):
-		T='moving';P='phase';O='ts';L='close';G=btn_num;E='open';D='dir';H=_normalize_targets(targets)
-		if not H:return
-		I=B.hass.states.get(H[0]);M=I.state if I is not _A else _A;C=I.attributes.get('current_position')if I is not _A else _A;N=asyncio.get_event_loop().time();A=B._cover_cycle_mem.get(G);Q=A is not _A and N-A.get(O,0)<=B._COVER_CYCLE_WINDOW;J=bool(Q and A and A.get(P)==T)
-		if J and C is not _A:
-			if A[D]==E and C>=100:J=_C
-			elif A[D]==L and C<=0:J=_C
-		if J:K='stop_cover';B._cover_cycle_mem[G]={P:'idle',D:A[D],O:N}
+		T='moving';P='close';O='phase';N='ts';F=btn_num;E='open';D='dir';G=_normalize_targets(targets)
+		if not G:return
+		H=B.hass.states.get(G[0]);L=H.state if H is not _A else _A;I=H.attributes.get('current_position')if H is not _A else _A;M=asyncio.get_event_loop().time();A=B._cover_cycle_mem.get(F);J=M-A.get(N,0)if A else 1e9;U=A is not _A and J<=B._COVER_CYCLE_WINDOW;Q=bool(A and A.get(O)==T and J<B._COVER_TRAVEL_S)
+		if Q:K='stop_cover';B._cover_cycle_mem[F]={O:'idle',D:A[D],N:M}
 		else:
-			if C is not _A:R=C<=0;S=C>=100
-			else:R=M==_h;S=M==E
-			if R:F=E
-			elif S:F=L
-			elif Q and A and A.get(D):F=L if A[D]==E else E
-			else:F=L
-			K=_AC if F==E else _AD;B._cover_cycle_mem[G]={P:T,D:F,O:N}
-		await B.hass.services.async_call(_A7,K,{ATTR_ENTITY_ID:H},blocking=_B);B._last_action={_D:ACTION_COVER_CYCLE,_I:H,'state':K};_LOGGER.debug("'%s': button %d cover cycle — state=%s pos=%s mem=%s → %s",B.name,G,M,C,A,K)
+			if I is not _A:R=I<=0;S=I>=100
+			else:R=L==_h;S=L==E
+			if R:C=E
+			elif S:C=P
+			elif U and A and A.get(D):C=P if A[D]==E else E
+			else:C=P
+			K=_AC if C==E else _AD;B._cover_cycle_mem[F]={O:T,D:C,N:M}
+		await B.hass.services.async_call(_A7,K,{ATTR_ENTITY_ID:G},blocking=_B);B._last_action={_D:ACTION_COVER_CYCLE,_I:G,'state':K};_LOGGER.debug("'%s': button %d cover cycle — state=%s pos=%s since=%.1fs prev=%s moving=%s → %s",B.name,F,L,I,J if J<1e8 else-1,A,Q,K)
 	async def _light_cycle_dim(A,btn_num,targets,levels):
 		E=btn_num;D=levels;B=_normalize_targets(targets);C=A._light_dim_indices.get(E,len(D))
 		if C>=len(D):C=0
