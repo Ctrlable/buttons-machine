@@ -241,6 +241,11 @@ def _extract_button_number(btn_entry,hass):
 				except(ValueError,TypeError):pass
 	F=_re.findall('\\d+',B)
 	if F:return int(F[-1])
+def _btn_num_from_name(entry):
+	A=entry;D=getattr(A,'original_name',_A)or getattr(A,_G,_A)or'';B=_re.search('button[_\\s]+(\\d+)\\b',D.lower())
+	if B:
+		C=int(B.group(1))
+		if 1<=C<=99:return C
 def _extract_btn_num_from_led_uid(uid,serial=''):
 	B=serial
 	if not uid:return
@@ -273,34 +278,37 @@ def _find_lutron_device(hass,config_entry):
 			if A.name and C in A.name.lower()and any(A[0]==_R for A in A.identifiers):_LOGGER.debug("LED: serial '%s' not matched; found device '%s' by name",B,A.name);return A
 	G=[(A.name,list(A.identifiers))for A in D.devices.values()if any(A[0]==_R for A in A.identifiers)];_LOGGER.warning("LED discovery: no lutron_caseta device matched serial='%s' device_name='%s'. Available lutron_caseta devices: %s",B,C,G)
 async def _find_led_entities_by_button_entities(hass,config_entry):
-	O='button.';H=hass;D=config_entry;P=str(D.data.get(CONF_DEVICE_SERIAL,'')).strip();Q=er.async_get(H);I=_find_lutron_device(H,D)
+	O='button.';H=hass;E=config_entry;P=str(E.data.get(CONF_DEVICE_SERIAL,'')).strip();Q=er.async_get(H);I=_find_lutron_device(H,E)
 	if I is _A:return{}
-	M=er.async_entries_for_device(Q,I.id);J=[A for A in M if A.domain==_k];G=[A for A in M if A.domain==_P and A.entity_id.endswith('_led')];_LOGGER.debug("LED discovery for '%s': device '%s' has %d button entities, %d LED switch entities",D.title,I.name,len(J),len(G))
+	M=er.async_entries_for_device(Q,I.id);J=[A for A in M if A.domain==_k];G=[A for A in M if A.domain==_P and A.entity_id.endswith('_led')];_LOGGER.debug("LED discovery for '%s': device '%s' has %d button entities, %d LED switch entities",E.title,I.name,len(J),len(G))
 	if not G:_LOGGER.debug("LED discovery: no switch.*_led entities on device '%s'",I.name);return{}
-	R={A.entity_id for A in G};B={};K=D.data.get(_s,{})or{}
-	for E in J:
-		F=E.entity_id[len(O):];L=f"switch.{F}_led"
+	R={A.entity_id for A in G};B={};K=E.data.get(_s,{})or{}
+	for D in J:
+		F=D.entity_id[len(O):];L=f"switch.{F}_led"
 		if L not in R:continue
 		A=_resolve_led_btn_num(F,K)
-		if A is _A:A=_extract_button_number(E,H)
+		if A is _A:A=_btn_num_from_name(D)
+		if A is _A:A=_extract_button_number(D,H)
 		if A is not _A:B[A]=L;_LOGGER.debug("LED (A): button %d → '%s'",A,L)
-	if B:_LOGGER.info("LED discovery for '%s' (strategy A): %s",D.title,B);return B
+	if B:_LOGGER.info("LED discovery for '%s' (strategy A): %s",E.title,B);return B
 	N={A.unique_id:A for A in J if A.unique_id}
 	for C in G:
 		if not C.unique_id:continue
-		E=N.get(C.unique_id)
-		if E is _A:S=_re.sub('[_-]?led$','',C.unique_id).rstrip('_-');E=N.get(S)
-		if E:
-			F=E.entity_id[len(O):];A=_resolve_led_btn_num(F,K)
-			if A is _A:A=_extract_button_number(E,H)
+		D=N.get(C.unique_id)
+		if D is _A:S=_re.sub('[_-]?led$','',C.unique_id).rstrip('_-');D=N.get(S)
+		if D:
+			F=D.entity_id[len(O):];A=_resolve_led_btn_num(F,K)
+			if A is _A:A=_btn_num_from_name(D)
+			if A is _A:A=_extract_button_number(D,H)
 			if A is not _A:B[A]=C.entity_id;_LOGGER.debug("LED (B): button %d → '%s'",A,C.entity_id)
-	if B:_LOGGER.info("LED discovery for '%s' (strategy B): %s",D.title,B);return B
+	if B:_LOGGER.info("LED discovery for '%s' (strategy B): %s",E.title,B);return B
 	for C in G:
 		F=C.entity_id[len('switch.'):];F=_re.sub('_led$','',F);A=_resolve_led_btn_num(F,K)
+		if A is _A:A=_btn_num_from_name(C)
 		if A is _A:A=_extract_btn_num_from_led_uid(C.unique_id or'',P)
 		if A is not _A:B[A]=C.entity_id;_LOGGER.debug("LED (C): button %d → '%s'",A,C.entity_id)
-	if B:_LOGGER.info("LED discovery for '%s' (strategy C): %s",D.title,B);return B
-	_LOGGER.warning("LED discovery for '%s': all strategies failed. button entities=%s  LED entities=%s  Configure led_entity manually in options or run debug_leds service.",D.title,[A.entity_id for A in J],[A.entity_id for A in G]);return B
+	if B:_LOGGER.info("LED discovery for '%s' (strategy C): %s",E.title,B);return B
+	_LOGGER.warning("LED discovery for '%s': all strategies failed. button entities=%s  LED entities=%s  Configure led_entity manually in options or run debug_leds service.",E.title,[A.entity_id for A in J],[A.entity_id for A in G]);return B
 async def _async_debug_leds(hass,call):
 	C=hass;A=[];J=C.data.get(DOMAIN,{}).get(_v,{})
 	if not J:A.append('No entry controllers found in hass.data — is the integration loaded?')
