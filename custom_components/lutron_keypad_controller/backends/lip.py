@@ -16,16 +16,14 @@ def _lip_device(hass,lip_id):
 		for A in B.identifiers:
 			if len(A)>=2 and A[0]==_A and str(A[1])==lip_id:return B
 class LipBackend(KeypadBackend):
-	source_domain=_A;native_hold=False;native_double_tap=False
+	source_domain=_A;native_hold=True;native_double_tap=True
 	def subscribe(E,hass,controller):
-		A=controller;B=_lip_id(A._config_entry);I=re.compile(rf"^keypad_{re.escape(B)}_\w*?(\d+)$")
+		A=controller;B=_lip_id(A._config_entry);G=re.compile(rf"^keypad_{re.escape(B)}_\w*?(\d+)$")
 		@callback
 		def C(event):
-			H='release';D='press';E=event.data;F=str(E.get('id',''));G=I.match(F)
-			if not G:return
-			B=int(G.group(1));C=E.get('action',D);_LOGGER.debug("'%s': lip event — id=%s btn=%d action=%s",A.name,F,B,C)
-			if C==D:A.handle_button(B,D)
-			elif C in(H,'hold_release'):A.handle_button(B,H)
+			B=event.data;C=str(B.get('id',''));D=G.match(C)
+			if not D:return
+			E=int(D.group(1));F=B.get('action','press');_LOGGER.debug("'%s': lip event — id=%s btn=%d action=%s",A.name,C,E,F);A.handle_button(E,F)
 		D=hass.bus.async_listen(LIP_EVENT,C);_LOGGER.info("Lutron Keypad Controller '%s' registered (lip, keypad %s)",A.name,B);return D
 	async def async_write_led(C,hass,led_entity,is_on):A=led_entity;B=A.split('.',1)[0];await hass.services.async_call(B,SERVICE_TURN_ON if is_on else SERVICE_TURN_OFF,{ATTR_ENTITY_ID:A},blocking=True)
 	async def async_find_leds(H,hass,config_entry):
