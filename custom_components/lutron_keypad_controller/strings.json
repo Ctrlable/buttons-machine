@@ -24,6 +24,27 @@
           "device_name": "Device Name (optional)",
           "area_name": "Area Name (optional)"
         }
+      },
+      "caseta": {
+        "title": "Select Keypad (Caséta / RA2 Select)",
+        "description": "Found {count} keypad(s) on your Lutron bridge. Select the one you want to configure.",
+        "data": {
+          "device_serial": "Keypad"
+        }
+      },
+      "source": {
+        "title": "Choose Lutron source",
+        "description": "Both lutron_caseta and lutron_lip are set up. Which keypad system do you want to add from?",
+        "data": {
+          "source": "Source integration"
+        }
+      },
+      "lip": {
+        "title": "Select Keypad (Homeworks QS / RadioRA)",
+        "description": "Found {count} lutron_lip keypad(s). Select the one you want to configure.",
+        "data": {
+          "keypad": "Keypad"
+        }
       }
     },
     "error": {
