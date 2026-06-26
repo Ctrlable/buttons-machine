@@ -16,7 +16,7 @@ def _lip_device(hass,lip_id):
 		for A in B.identifiers:
 			if len(A)>=2 and A[0]==_A and str(A[1])==lip_id:return B
 class LipBackend(KeypadBackend):
-	source_domain=_A;native_hold=True;native_double_tap=True
+	source_domain=_A;license_product=_A;accepted_products=_A,'lutron_keypad_controller';native_hold=True;native_double_tap=True
 	def subscribe(E,hass,controller):
 		A=controller;B=_lip_id(A._config_entry);G=re.compile(rf"^keypad_{re.escape(B)}_\w*?(\d+)$")
 		@callback

@@ -1,4 +1,5 @@
 from __future__ import annotations
+_A='lutron_leap'
 import logging
 from typing import Callable
 from homeassistant.config_entries import ConfigEntry
@@ -7,7 +8,7 @@ from homeassistant.core import HomeAssistant,callback
 from.base import KeypadBackend
 _LOGGER=logging.getLogger(__name__)
 class CasetaBackend(KeypadBackend):
-	source_domain='lutron_caseta';native_hold=False;native_double_tap=False
+	source_domain='lutron_caseta';license_product=_A;accepted_products=_A,'lutron_keypad_controller';native_hold=False;native_double_tap=False
 	def subscribe(E,hass,controller):
 		B=controller;from..const import LUTRON_EVENT as A
 		@callback
