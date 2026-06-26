@@ -9,6 +9,7 @@ from homeassistant.helpers.entity import DeviceInfo,EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from.const import DOMAIN
 def _controller_device():return DeviceInfo(identifiers={(DOMAIN,'controller')},name='Lutron Keypad Controller')
+async def _subscribe_travel_updates(entity):A=entity;from homeassistant.helpers.dispatcher import async_dispatcher_connect as B;from.import _TRAVEL_SIGNAL as C;A.async_on_remove(B(A.hass,C,A.async_write_ha_state))
 async def async_setup_entry(hass,entry,async_add_entities):
 	B=entry;A=hass
 	if not B.data.get('_controller'):return
@@ -18,6 +19,7 @@ async def async_setup_entry(hass,entry,async_add_entities):
 class LutronGlobalTravelNumber(NumberEntity):
 	_attr_has_entity_name=True;_attr_should_poll=False;_attr_entity_category=EntityCategory.CONFIG;_attr_name='Default shade travel time';_attr_native_unit_of_measurement='s';_attr_native_min_value=2;_attr_native_max_value=180;_attr_native_step=1;_attr_mode=NumberMode.BOX;_attr_icon='mdi:timer-cog-outline'
 	def __init__(A,hass,entry):A._hass=hass;A._attr_unique_id=f"{entry.entry_id}_shade_travel_default"
+	async def async_added_to_hass(A):await _subscribe_travel_updates(A)
 	@property
 	def device_info(self):return _controller_device()
 	@property
@@ -26,6 +28,7 @@ class LutronGlobalTravelNumber(NumberEntity):
 class LutronShadeTravelNumber(NumberEntity):
 	_attr_has_entity_name=True;_attr_should_poll=False;_attr_entity_category=EntityCategory.CONFIG;_attr_native_unit_of_measurement='s';_attr_native_min_value=0;_attr_native_max_value=180;_attr_native_step=1;_attr_mode=NumberMode.BOX;_attr_icon='mdi:timer-outline'
 	def __init__(A,hass,entry,cover_id):B=cover_id;A._hass=hass;A._cover_id=B;D=B.split('.',1)[-1];A._attr_unique_id=f"{entry.entry_id}_shade_travel_{D}";C=hass.states.get(B);E=C.name if C and C.name else D.replace('_',' ').title();A._attr_name=f"{E} travel time"
+	async def async_added_to_hass(A):await _subscribe_travel_updates(A)
 	@property
 	def device_info(self):return _controller_device()
 	@property
