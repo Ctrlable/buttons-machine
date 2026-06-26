@@ -343,7 +343,7 @@ async def _ws_discover_keypads(hass,connection,msg):
 			if F not in J:continue
 			D.append({_L:E,_I:B.get(_I,''),H:B.get(_AA,''),_D:F,_A8:I(F),_X:B.get(_X,'')or'',_F:str(B.get(_F,''))})
 	from.config_flow import _discover_lip_keypads as N
-	for O in N(C):
+	for O in await N(C):
 		A=O[_s]
 		if A[CONF_DEVICE_SERIAL]in G:continue
 		D.append({_L:A[CONF_DEVICE_SERIAL],_I:A[_I],H:A.get(CONF_AREA_NAME,''),_D:A.get(_R,'')or'lutron_lip',_A8:A[CONF_KEYPAD_TYPE],_X:A.get(_R,''),_F:A[_F]})
@@ -353,7 +353,7 @@ async def _ws_discover_keypads(hass,connection,msg):
 async def _ws_add_keypad(hass,connection,msg):
 	V='flow_error';U='result';T='create_entry';S='panel';N='reason';F=hass;D=connection;A=msg;from.config_flow import _infer_keypad_type as W,_detect_button_layout as X;C=A[_L];J=(A.get(_I)or C).strip();H=A.get(_F,'')
 	if C.startswith('lip_'):
-		from.config_flow import _discover_lip_keypads as Y;O=next((A for A in Y(F)if A[_s][CONF_DEVICE_SERIAL]==C),_A)
+		from.config_flow import _discover_lip_keypads as Y;O=next((A for A in await Y(F)if A[_s][CONF_DEVICE_SERIAL]==C),_A)
 		if O is _A:D.send_error(A[_E],_t,f"lip keypad '{C}' not found");return
 		K={**O[_s],_I:J,CONF_DEVICE_NAME:J};B=await F.config_entries.flow.async_init(DOMAIN,context={_AB:S},data=K)
 		if B.get(_D)==T:G=B.get(U);D.send_result(A[_E],{_j:_B,_M:G.entry_id if G else''})
