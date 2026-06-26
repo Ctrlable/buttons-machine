@@ -59,7 +59,7 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant,callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import device_registry as dr,entity_registry as er,selector
+from homeassistant.helpers import area_registry as ar,device_registry as dr,entity_registry as er,selector
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
 import homeassistant.helpers.config_validation as cv
 from.const import DOMAIN,ACTION_ENTITY_TOGGLE,CONF_DEVICE_SERIAL,CONF_DEVICE_NAME,CONF_AREA_NAME,CONF_KEYPAD_TYPE,CONF_ACTION_TYPE,CONF_ACTION_TARGET,CONF_LED_ENTITY,CONF_LED_INVERT,CONF_LED_MODE,CONF_TARGET_BRIGHTNESS,CONF_TARGET_COLOR_TEMP,LED_MODE_ROOM,LED_MODE_SCENE,ACTION_STATEFUL_SCENE,KEYPAD_SEETOUCH,KEYPAD_SEETOUCH_HYBRID,KEYPAD_SUNNATA,KEYPAD_SUNNATA_HYBRID,KEYPAD_ALISEE,KEYPAD_PALLADIOM,KEYPAD_TABLETOP,KEYPAD_PICO,KEYPAD_GENERIC,ACTION_NONE,ACTION_RAISE,ACTION_LOWER,ACTION_TYPE_LABELS,ACTION_TYPE_DOMAINS,ACTION_TYPES_NEEDING_ENTITY,MULTI_ENTITY_ACTIONS,get_button_list,get_button_layout
@@ -216,18 +216,25 @@ def _infer_lip_keypad_type(model):
 	if _U in A:return KEYPAD_PICO
 	return KEYPAD_GENERIC
 def _discover_lip_keypads(hass):
-	K=dr.async_get(hass);L=er.async_get(hass);H=[]
-	for A in K.devices.values():
+	H=hass;N=dr.async_get(H);O=er.async_get(H);J=[]
+	for A in N.devices.values():
 		B=next((str(A[1])for A in A.identifiers if A[0]==_t),_A)
 		if B is _A:continue
-		C={}
-		for D in er.async_entries_for_device(L,A.id):
-			if D.domain!='event':continue
-			I=re.search('(\\d+)$',D.entity_id)
-			if I:J=int(I.group(1));C[J]=D.original_name or D.name or f"Button {J}"
-		if not C:continue
-		E=sorted(C);G=A.model or'';F=A.name_by_user or A.name or f"keypad {B}";H.append({_L:f"lip_{B}",_B:F,_C:f"{F} ({G or _J}, {len(E)} buttons)",'data':{_B:F,'backend':_P,'lip_id':B,_G:A.id,CONF_DEVICE_SERIAL:f"lip_{B}",CONF_DEVICE_NAME:F,CONF_AREA_NAME:'',CONF_KEYPAD_TYPE:_infer_lip_keypad_type(G),_u:G,_K:E,_I:{str(A):C[A]for A in E},_O:E}})
-	return sorted(H,key=lambda k:k[_B])
+		D={}
+		for E in er.async_entries_for_device(O,A.id):
+			if E.domain!='event':continue
+			K=re.search('(\\d+)$',E.entity_id)
+			if K:L=int(K.group(1));D[L]=E.original_name or E.name or f"Button {L}"
+		if not D:continue
+		F=sorted(D);I=A.model or'';G=''
+		if A.area_id:
+			M=ar.async_get(H).async_get_area(A.area_id)
+			if M:G=M.name
+		if A.name_by_user:C=A.name_by_user
+		elif G:C=f"{G} keypad {B}"
+		else:C=A.name or f"keypad {B}"
+		J.append({_L:f"lip_{B}",_B:C,_C:f"{C} ({I or _J}, {len(F)} buttons)",'data':{_B:C,'backend':_P,'lip_id':B,_G:A.id,CONF_DEVICE_SERIAL:f"lip_{B}",CONF_DEVICE_NAME:C,CONF_AREA_NAME:G,CONF_KEYPAD_TYPE:_infer_lip_keypad_type(I),_u:I,_K:F,_I:{str(A):D[A]for A in F},_O:F}})
+	return sorted(J,key=lambda k:k[_B])
 class LutronKeypadsConfigFlow(config_entries.ConfigFlow,domain=DOMAIN):
 	VERSION=1
 	def __init__(A):A._discovered_keypads=[];A._selected_device=_A;A._detected_layout={}
