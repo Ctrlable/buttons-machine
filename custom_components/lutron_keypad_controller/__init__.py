@@ -1,53 +1,54 @@
 from __future__ import annotations
-_AN='entity_id'
-_AM='controller'
-_AL='current_position'
-_AK='stop_cover'
-_AJ='lutron_type'
-_AI='color_temp_kelvin'
-_AH='debug_leds'
-_AG='open_cover'
-_AF='_sidebar_show'
-_AE='/lutron_keypad_panel.js'
-_AD='area_name'
-_AC='leap_button_number'
-_AB='lower_button'
-_AA='raise_button'
-_A9='configurable_buttons'
-_A8='button_number'
-_A7='off_level'
-_A6='generic'
-_A5='scene_id'
-_A4='transition'
-_A3='unavailable'
-_A2='controllers'
-_A1='number'
-_A0='close_cover'
-_z='cover'
-_y='_travel'
-_x='jti'
-_w='product'
-_v='source'
-_u='entry_controllers'
-_t='keypad_type'
-_s='leap_button_map'
-_r='button_names'
-_q='hs_color'
-_p='up'
-_o='closed'
-_n='off'
-_m='license_keys'
-_l='not_found'
-_k='none'
-_j='button'
-_i='button_numbers'
-_h='_v2_blocks'
-_g='hold'
-_f='double_tap'
-_e='brightness_pct'
-_d='down'
-_c='color_temp'
-_b='default'
+_AO='entity_id'
+_AN='controller'
+_AM='current_position'
+_AL='stop_cover'
+_AK='lutron_type'
+_AJ='color_temp_kelvin'
+_AI='debug_leds'
+_AH='open_cover'
+_AG='_sidebar_show'
+_AF='/lutron_keypad_panel.js'
+_AE='area_name'
+_AD='leap_button_number'
+_AC='lower_button'
+_AB='raise_button'
+_AA='configurable_buttons'
+_A9='button_number'
+_A8='off_level'
+_A7='generic'
+_A6='scene_id'
+_A5='transition'
+_A4='unavailable'
+_A3='controllers'
+_A2='number'
+_A1='close_cover'
+_A0='cover'
+_z='_travel'
+_y='jti'
+_x='product'
+_w='source'
+_v='entry_controllers'
+_u='keypad_type'
+_t='leap_button_map'
+_s='button_names'
+_r='hs_color'
+_q='up'
+_p='closed'
+_o='off'
+_n='license_keys'
+_m='not_found'
+_l='none'
+_k='button'
+_j='button_numbers'
+_i='_v2_blocks'
+_h='hold'
+_g='double_tap'
+_f='brightness_pct'
+_e='down'
+_d='color_temp'
+_c='default'
+_b='Buttons Machine'
 _a='license_key'
 _Z='success'
 _Y='.'
@@ -94,7 +95,7 @@ _COMPONENT_DIR=Path(__file__).parent
 from.const import DOMAIN,LUTRON_EVENT,CONF_BUTTONS,CONF_BUTTON_NUMBER,CONF_BUTTON_LABEL,CONF_ACTION_TYPE,CONF_ACTION_TARGET,CONF_ACTION_PARAMS,CONF_LED_ENTITY,CONF_LED_INVERT,CONF_LED_MODE,CONF_TARGET_BRIGHTNESS,CONF_TARGET_COLOR_TEMP,CONF_ENTITY_SETTINGS,LED_MODE_ROOM,LED_MODE_PATHWAY,LED_MODE_SCENE,CONF_DEVICE_SERIAL,CONF_DEVICE_NAME,CONF_AREA_NAME,CONF_KEYPAD_TYPE,ACTION_STATEFUL_SCENE,ACTION_HA_SCENE,ACTION_AUTOMATION,ACTION_SCRIPT,ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_COVER_CYCLE,ACTION_LIGHT_CYCLE_DIM,ACTION_RAISE,ACTION_LOWER,ACTION_NONE,DIM_CYCLE_LEVELS,COVER_STATE_OPEN,COVER_STATE_STOP,COVER_STATE_CLOSE,RAISE_LOWER_STEP,ATTR_ACTIVE_SCENE,ATTR_LAST_ACTION,ATTR_COVER_STATES,ATTR_LIGHT_DIM_STEPS,get_button_layout,get_button_list,KEYPAD_GENERIC
 _LOGGER=logging.getLogger(__name__)
 BUTTON_SCHEMA=vol.Schema({vol.Required(CONF_BUTTON_NUMBER):cv.positive_int,vol.Optional(CONF_BUTTON_LABEL,default=''):cv.string,vol.Required(CONF_ACTION_TYPE):vol.In([ACTION_STATEFUL_SCENE,ACTION_HA_SCENE,ACTION_AUTOMATION,ACTION_SCRIPT,ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_COVER_CYCLE,ACTION_LIGHT_CYCLE_DIM,ACTION_RAISE,ACTION_LOWER,ACTION_NONE]),vol.Optional(CONF_ACTION_TARGET):vol.Any(cv.entity_id,[cv.entity_id],cv.string),vol.Optional(CONF_ACTION_PARAMS,default={}):dict,vol.Optional(CONF_LED_ENTITY):cv.entity_id})
-KEYPAD_SCHEMA=vol.Schema({vol.Required(_G):cv.string,vol.Optional(CONF_DEVICE_SERIAL,default=''):cv.string,vol.Optional(CONF_DEVICE_NAME,default=''):cv.string,vol.Optional(CONF_AREA_NAME,default=''):cv.string,vol.Optional(CONF_KEYPAD_TYPE,default=_A6):cv.string,vol.Optional(_M,default=''):cv.string,vol.Required(CONF_BUTTONS):vol.All(cv.ensure_list,[BUTTON_SCHEMA])})
+KEYPAD_SCHEMA=vol.Schema({vol.Required(_G):cv.string,vol.Optional(CONF_DEVICE_SERIAL,default=''):cv.string,vol.Optional(CONF_DEVICE_NAME,default=''):cv.string,vol.Optional(CONF_AREA_NAME,default=''):cv.string,vol.Optional(CONF_KEYPAD_TYPE,default=_A7):cv.string,vol.Optional(_M,default=''):cv.string,vol.Required(CONF_BUTTONS):vol.All(cv.ensure_list,[BUTTON_SCHEMA])})
 CONFIG_SCHEMA=vol.Schema({DOMAIN:vol.Schema({vol.Required('keypads'):vol.All(cv.ensure_list,[KEYPAD_SCHEMA])})},extra=vol.ALLOW_EXTRA)
 PLATFORMS=['sensor',_P,'select','text']
 def _normalize_action_target(target_raw,action_type):
@@ -124,8 +125,8 @@ def _build_buttons_from_options(buttons_options):
 		if C.get(CONF_TARGET_COLOR_TEMP):B[CONF_TARGET_COLOR_TEMP]=int(C[CONF_TARGET_COLOR_TEMP])
 		if C.get(CONF_ENTITY_SETTINGS):B[CONF_ENTITY_SETTINGS]=C[CONF_ENTITY_SETTINGS]
 		if A.get(_Q):B[_Q]=_B
-		H=A.get(_A7,{});I=A.get(_f,{});J=A.get(_g,{})
-		if D is not _A or H or I or J:B[_h]={K:D or{},_A7:H,_f:I,_g:J}
+		H=A.get(_A8,{});I=A.get(_g,{});J=A.get(_h,{})
+		if D is not _A or H or I or J:B[_i]={K:D or{},_A8:H,_g:I,_h:J}
 		F.append(B)
 	return F
 _SCENE_GROUPS={}
@@ -146,11 +147,11 @@ def _iter_lutron_bridges(hass):
 _RAISE_RL_RE=_re.compile('\\braise\\b',_re.IGNORECASE)
 _LOWER_RL_RE=_re.compile('\\blower\\b',_re.IGNORECASE)
 async def _auto_refresh_button_layout(hass,entry):
-	K=hass;A=entry;R=bool(A.data.get(_i));e=_S in A.data
+	K=hass;A=entry;R=bool(A.data.get(_j));e=_S in A.data
 	if R and e:return
 	B=str(A.data.get(CONF_DEVICE_SERIAL,'')).strip();G=str(A.data.get(_F,'')).strip();f=A.data.get(CONF_AREA_NAME,'');g=A.data.get(CONF_DEVICE_NAME,'')
 	if not B:return
-	from.const import KEYPAD_LAYOUTS as S,KEYPAD_GENERIC as T;from.config_flow import _infer_keypad_type as h;U=A.data.get(_AJ,'');V=h(U)if U else A.data.get(CONF_KEYPAD_TYPE,T);l,W=S.get(V,S[T])
+	from.const import KEYPAD_LAYOUTS as S,KEYPAD_GENERIC as T;from.config_flow import _infer_keypad_type as h;U=A.data.get(_AK,'');V=h(U)if U else A.data.get(CONF_KEYPAD_TYPE,T);l,W=S.get(V,S[T])
 	if R:
 		for L in _iter_lutron_bridges(K):
 			try:O=L.get_devices()
@@ -171,7 +172,7 @@ async def _auto_refresh_button_layout(hass,entry):
 		if not Y:continue
 		H=[];C=_A;D=_A;Z={};Q=[]
 		for M in Y:
-			a=M.get(_A8)
+			a=M.get(_A9)
 			if a is _A:continue
 			try:J=int(a)
 			except(TypeError,ValueError):continue
@@ -195,7 +196,7 @@ async def _auto_refresh_button_layout(hass,entry):
 			for F in O.values():
 				if B and str(F.get(_K,''))==B or G and str(F.get(_F,''))==G:I=F.get(_T,'')or'';break
 		except Exception as P:_LOGGER.debug("get_devices() failed fetching model for '%s': %s",A.title,P)
-		k={_i:H,_A9:d,_AA:C,_AB:D,_r:Z,_s:{},CONF_KEYPAD_TYPE:V,_S:I};_LOGGER.info("Auto-detected layout for '%s' (serial=%s): %d buttons, configurable=%s raise=%s lower=%s",A.title,B,len(H),d,C,D);K.config_entries.async_update_entry(A,data={**A.data,**k});return
+		k={_j:H,_AA:d,_AB:C,_AC:D,_s:Z,_t:{},CONF_KEYPAD_TYPE:V,_S:I};_LOGGER.info("Auto-detected layout for '%s' (serial=%s): %d buttons, configurable=%s raise=%s lower=%s",A.title,B,len(H),d,C,D);K.config_entries.async_update_entry(A,data={**A.data,**k});return
 	_LOGGER.warning("Could not auto-detect button layout for '%s' (serial=%s) — bridge not found or carries no button data.",A.title,B)
 async def _find_led_entities(hass,config_entry):
 	B=config_entry;E=str(B.data.get(CONF_DEVICE_SERIAL,'')).strip();H=str(B.data.get(_F,'')).strip();_LOGGER.debug("LED discovery starting for '%s' — serial=%s device_id=%s",B.title,E,H);J=dr.async_get(hass);N=er.async_get(hass);_LOGGER.debug('LED discovery: %d devices in registry',len(J.devices));C=_A
@@ -221,7 +222,7 @@ async def _find_led_entities(hass,config_entry):
 			if D is not _A:G[D]=A.entity_id;_LOGGER.debug('LED discovery (lenient): button %d → %s (uid=%s)',D,A.entity_id,A.unique_id)
 			else:_LOGGER.warning("LED discovery: '%s' contains 'led' but no button number could be extracted — haystack='%s'",A.entity_id,I)
 	if G:_LOGGER.info("LED discovery for '%s': %s",B.title,G)
-	else:_LOGGER.warning("LED discovery for '%s': no LED entities mapped (keypad_type=%s). If your keypad has LEDs, configure led_entity manually in the options flow, or check the debug_leds service output.",B.title,B.data.get(_t))
+	else:_LOGGER.warning("LED discovery for '%s': no LED entities mapped (keypad_type=%s). If your keypad has LEDs, configure led_entity manually in the options flow, or check the debug_leds service output.",B.title,B.data.get(_u))
 	return G
 def _extract_button_number(btn_entry,hass):
 	C=btn_entry;B=C.unique_id or'';G=C.entity_id or'';A=_re.search('_(\\d+)$',B)
@@ -230,7 +231,7 @@ def _extract_button_number(btn_entry,hass):
 	if A:return int(A.group(1))
 	D=hass.states.get(G)
 	if D:
-		for H in(_A8,_AC,'button_index'):
+		for H in(_A9,_AD,'button_index'):
 			E=D.attributes.get(H)
 			if E is not _A:
 				try:return int(E)
@@ -271,9 +272,9 @@ def _find_lutron_device(hass,config_entry):
 async def _find_led_entities_by_button_entities(hass,config_entry):
 	O='button.';H=hass;D=config_entry;P=str(D.data.get(CONF_DEVICE_SERIAL,'')).strip();Q=er.async_get(H);I=_find_lutron_device(H,D)
 	if I is _A:return{}
-	M=er.async_entries_for_device(Q,I.id);J=[A for A in M if A.domain==_j];G=[A for A in M if A.domain==_P and A.entity_id.endswith('_led')];_LOGGER.debug("LED discovery for '%s': device '%s' has %d button entities, %d LED switch entities",D.title,I.name,len(J),len(G))
+	M=er.async_entries_for_device(Q,I.id);J=[A for A in M if A.domain==_k];G=[A for A in M if A.domain==_P and A.entity_id.endswith('_led')];_LOGGER.debug("LED discovery for '%s': device '%s' has %d button entities, %d LED switch entities",D.title,I.name,len(J),len(G))
 	if not G:_LOGGER.debug("LED discovery: no switch.*_led entities on device '%s'",I.name);return{}
-	R={A.entity_id for A in G};B={};K=D.data.get(_r,{})or{}
+	R={A.entity_id for A in G};B={};K=D.data.get(_s,{})or{}
 	for E in J:
 		F=E.entity_id[len(O):];L=f"switch.{F}_led"
 		if L not in R:continue
@@ -298,12 +299,12 @@ async def _find_led_entities_by_button_entities(hass,config_entry):
 	if B:_LOGGER.info("LED discovery for '%s' (strategy C): %s",D.title,B);return B
 	_LOGGER.warning("LED discovery for '%s': all strategies failed. button entities=%s  LED entities=%s  Configure led_entity manually in options or run debug_leds service.",D.title,[A.entity_id for A in J],[A.entity_id for A in G]);return B
 async def _async_debug_leds(hass,call):
-	C=hass;A=[];J=C.data.get(DOMAIN,{}).get(_u,{})
+	C=hass;A=[];J=C.data.get(DOMAIN,{}).get(_v,{})
 	if not J:A.append('No entry controllers found in hass.data — is the integration loaded?')
 	for(R,B)in J.items():
 		A.append(f"\n{"="*60}");A.append(f"Keypad : {B.name}");A.append(f"Serial : {B.serial}");A.append(f"device_id: {B.device_id}");A.append(f"LED map (auto-discovered): {B._led_map}");A.append(f"Button switches registered: {list(B._button_switches.keys())}")
 		for(F,K)in B._buttons.items():
-			O=K.get(CONF_ACTION_TYPE,_k);L=K.get(CONF_LED_ENTITY,'');M=B._led_map.get(F,'');G=L or M;A.append(f"\n  Button {F}  action={O}");A.append(f"    manual led_entity : '{L}'");A.append(f"    auto-discovered   : '{M}'");A.append(f"    resolved LED      : '{G}'")
+			O=K.get(CONF_ACTION_TYPE,_l);L=K.get(CONF_LED_ENTITY,'');M=B._led_map.get(F,'');G=L or M;A.append(f"\n  Button {F}  action={O}");A.append(f"    manual led_entity : '{L}'");A.append(f"    auto-discovered   : '{M}'");A.append(f"    resolved LED      : '{G}'")
 			if G:D=C.states.get(G);A.append(f"    LED entity state  : {D.state if D else"⚠ ENTITY NOT FOUND"}")
 			else:A.append('    ⚠ NO LED ENTITY — auto-discovery failed and no manual led_entity set')
 			H=B._button_switches.get(F);A.append(f"    HA switch state   : {"ON"if H and H.is_on else"OFF"}{""if H else"  ⚠ switch entity not registered"}")
@@ -329,7 +330,7 @@ async def _ws_get_entries(hass,connection,msg):
 @websocket_api.async_response
 async def _ws_save_keypad_config(hass,connection,msg):
 	E=connection;B=msg;A=hass;D=B[_L];F=B[_U];C=A.config_entries.async_get_entry(D)
-	if C is _A or C.domain!=DOMAIN:E.send_error(B[_E],_l,f"Entry '{D}' not found");return
+	if C is _A or C.domain!=DOMAIN:E.send_error(B[_E],_m,f"Entry '{D}' not found");return
 	A.config_entries.async_update_entry(C,options={**C.options,_U:F});A.async_create_task(A.config_entries.async_reload(D));E.send_result(B[_E],{_Z:_B})
 @websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/discover_keypads"})
 @websocket_api.async_response
@@ -343,17 +344,17 @@ async def _ws_discover_keypads(hass,connection,msg):
 			if not F or F in E:continue
 			G=B.get(_D,'')
 			if G not in K:continue
-			D.append({_K:F,_G:B.get(_G,''),I:B.get(_AD,''),_D:G,_t:J(G),_T:B.get(_T,'')or'',_F:str(B.get(_F,''))})
+			D.append({_K:F,_G:B.get(_G,''),I:B.get(_AE,''),_D:G,_u:J(G),_T:B.get(_T,'')or'',_F:str(B.get(_F,''))})
 	from.config_flow import _discover_lip_keypads as O
 	for H in await O(C):
 		A=H[_V]
 		if A[CONF_DEVICE_SERIAL]in E:continue
-		D.append({_K:A[CONF_DEVICE_SERIAL],_G:A[_G],I:A.get(CONF_AREA_NAME,''),_D:A.get(_S,'')or'lutron_lip',_t:A[CONF_KEYPAD_TYPE],_T:A.get(_S,''),_F:A[_F]})
+		D.append({_K:A[CONF_DEVICE_SERIAL],_G:A[_G],I:A.get(CONF_AREA_NAME,''),_D:A.get(_S,'')or'lutron_lip',_u:A[CONF_KEYPAD_TYPE],_T:A.get(_S,''),_F:A[_F]})
 	from.config_flow import _discover_rfwc5_keypads as P
 	for H in P(C):
 		A=H[_V]
 		if A[CONF_DEVICE_SERIAL]in E:continue
-		D.append({_K:A[CONF_DEVICE_SERIAL],_G:A[_G],I:A.get(CONF_AREA_NAME,''),_D:'Eaton RFWC5',_t:A[CONF_KEYPAD_TYPE],_T:'RFWC5',_F:A[_F]})
+		D.append({_K:A[CONF_DEVICE_SERIAL],_G:A[_G],I:A.get(CONF_AREA_NAME,''),_D:'Eaton RFWC5',_u:A[CONF_KEYPAD_TYPE],_T:'RFWC5',_F:A[_F]})
 	connection.send_result(msg[_E],D)
 @websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/add_keypad",vol.Required(_K):str,vol.Required(_G):str,vol.Optional(_F,default=''):str})
 @websocket_api.async_response
@@ -361,15 +362,15 @@ async def _ws_add_keypad(hass,connection,msg):
 	S='flow_error';R='result';Q='create_entry';P='panel';K='reason';F=hass;D=connection;B=msg;from.config_flow import _infer_keypad_type as W,_detect_button_layout as X;C=B[_K];H=(B.get(_G)or C).strip();L=B.get(_F,'')
 	if C.startswith('lip_'):
 		from.config_flow import _discover_lip_keypads as Y;I=next((A for A in await Y(F)if A[_V][CONF_DEVICE_SERIAL]==C),_A)
-		if I is _A:D.send_error(B[_E],_l,f"lip keypad '{C}' not found");return
-		J={**I[_V],_G:H,CONF_DEVICE_NAME:H};A=await F.config_entries.flow.async_init(DOMAIN,context={_v:P},data=J)
+		if I is _A:D.send_error(B[_E],_m,f"lip keypad '{C}' not found");return
+		J={**I[_V],_G:H,CONF_DEVICE_NAME:H};A=await F.config_entries.flow.async_init(DOMAIN,context={_w:P},data=J)
 		if A.get(_D)==Q:E=A.get(R);D.send_result(B[_E],{_Z:_B,_L:E.entry_id if E else''})
 		else:D.send_error(B[_E],A.get(K,S),f"Could not add keypad: {A.get(K,_W)}")
 		return
 	if C.startswith('rfwc5_'):
 		from.config_flow import _discover_rfwc5_keypads as Z;I=next((A for A in Z(F)if A[_V][CONF_DEVICE_SERIAL]==C),_A)
-		if I is _A:D.send_error(B[_E],_l,f"RFWC5 keypad '{C}' not found");return
-		J={**I[_V],_G:H,CONF_DEVICE_NAME:H};A=await F.config_entries.flow.async_init(DOMAIN,context={_v:P},data=J)
+		if I is _A:D.send_error(B[_E],_m,f"RFWC5 keypad '{C}' not found");return
+		J={**I[_V],_G:H,CONF_DEVICE_NAME:H};A=await F.config_entries.flow.async_init(DOMAIN,context={_w:P},data=J)
 		if A.get(_D)==Q:E=A.get(R);D.send_result(B[_E],{_Z:_B,_L:E.entry_id if E else''})
 		else:D.send_error(B[_E],A.get(K,S),f"Could not add keypad: {A.get(K,_W)}")
 		return
@@ -378,9 +379,9 @@ async def _ws_add_keypad(hass,connection,msg):
 		try:b=a.get_devices()
 		except Exception:continue
 		for G in b.values():
-			if str(G.get(_K,''))==C:M=G.get(_D,'');N=G.get(_AD,'');O=G.get(_G,'');T=G.get(_T,'')or'';L=str(G.get(_F,''))or L;break
+			if str(G.get(_K,''))==C:M=G.get(_D,'');N=G.get(_AE,'');O=G.get(_G,'');T=G.get(_T,'')or'';L=str(G.get(_F,''))or L;break
 		if M:break
-	U=W(M);c=X(F,C,U,device_name=O,area_name=N,device_id=L);J={_G:H,CONF_DEVICE_SERIAL:C,CONF_DEVICE_NAME:O,CONF_AREA_NAME:N,CONF_KEYPAD_TYPE:U,_AJ:M,_S:T,_F:L,**c};A=await F.config_entries.flow.async_init(DOMAIN,context={_v:P},data=J)
+	U=W(M);c=X(F,C,U,device_name=O,area_name=N,device_id=L);J={_G:H,CONF_DEVICE_SERIAL:C,CONF_DEVICE_NAME:O,CONF_AREA_NAME:N,CONF_KEYPAD_TYPE:U,_AK:M,_S:T,_F:L,**c};A=await F.config_entries.flow.async_init(DOMAIN,context={_w:P},data=J)
 	if A.get(_D)==Q:E=A.get(R);D.send_result(B[_E],{_Z:_B,_L:E.entry_id if E else''})
 	elif A.get(_D)=='abort':V=A.get(K,_W);D.send_error(B[_E],V,f"Could not add keypad: {V}")
 	else:D.send_error(B[_E],S,'Unexpected flow result')
@@ -388,7 +389,7 @@ async def _ws_add_keypad(hass,connection,msg):
 @websocket_api.async_response
 async def _ws_delete_keypad(hass,connection,msg):
 	C=connection;A=msg;B=A[_L];D=hass.config_entries.async_get_entry(B)
-	if D is _A or D.domain!=DOMAIN:C.send_error(A[_E],_l,f"Entry '{B}' not found");return
+	if D is _A or D.domain!=DOMAIN:C.send_error(A[_E],_m,f"Entry '{B}' not found");return
 	await hass.config_entries.async_remove(B);C.send_result(A[_E],{_Z:_B})
 @websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/license_status",vol.Optional(_L):str})
 @websocket_api.async_response
@@ -402,23 +403,23 @@ async def _ws_license_status(hass,connection,msg):
 		if not S.data.get(_O):R.add(f(S).license_product)
 	I=[]
 	for E in sorted(R):
-		J=await _license_key_for_product(A,E);F={_w:E,'label':g.get(E,E),L:bool(J),G:_C,H:_A}
+		J=await _license_key_for_product(A,E);F={_x:E,'label':g.get(E,E),L:bool(J),G:_C,H:_A}
 		if J:
 			try:
-				B=b(J,current_version=e,expected_product=E);F.update({G:_B,_x:B.jti,T:B.expires_at,U:B.binding,V:B.instance_id,W:B.max_version,X:B.warn_only})
-				if P.get(_x)==B.jti:F[Y]=P.get('last_ok')
+				B=b(J,current_version=e,expected_product=E);F.update({G:_B,_y:B.jti,T:B.expires_at,U:B.binding,V:B.instance_id,W:B.max_version,X:B.warn_only})
+				if P.get(_y)==B.jti:F[Y]=P.get('last_ok')
 			except Z as h:F[H]=str(h)
 		I.append(F)
-	C['modules']=I;K=next((A for A in I if A[_w]==Q),_A)
-	if K:C.update({A:K[A]for A in(L,G,H,_x,T,U,V,W,X,Y)if A in K})
+	C['modules']=I;K=next((A for A in I if A[_x]==Q),_A)
+	if K:C.update({A:K[A]for A in(L,G,H,_y,T,U,V,W,X,Y)if A in K})
 	N.send_result(msg[_E],C)
-@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/set_license",vol.Required(_L):str,vol.Required(_a):str,vol.Optional(_w):str})
+@websocket_api.websocket_command({vol.Required(_D):f"{DOMAIN}/set_license",vol.Required(_L):str,vol.Required(_a):str,vol.Optional(_x):str})
 @websocket_api.async_response
 async def _ws_set_license(hass,connection,msg):
 	E=connection;C=msg;A=hass;from.license import EXPECTED_PRODUCT as F;B=_controller_entry(A)
 	if B is _A:B=A.config_entries.async_get_entry(C[_L])
-	if B is _A or B.domain!=DOMAIN:E.send_error(C[_E],_l,'Entry not found');return
-	G=(C.get(_w)or F).strip();H=C[_a].strip();D={**B.options};I={**(D.get(_m)or{})};I[G]=H;D[_m]=I
+	if B is _A or B.domain!=DOMAIN:E.send_error(C[_E],_m,'Entry not found');return
+	G=(C.get(_x)or F).strip();H=C[_a].strip();D={**B.options};I={**(D.get(_n)or{})};I[G]=H;D[_n]=I
 	if G==F:D[_a]=H
 	A.config_entries.async_update_entry(B,options=D)
 	for J in A.config_entries.async_entries(DOMAIN):
@@ -428,35 +429,35 @@ async def _register_panel_once(hass):
 	C='_panel_registered';A=hass
 	if A.data.get(DOMAIN,{}).get(C):return
 	B=_COMPONENT_DIR/'frontend'/'lutron_panel.js'
-	try:from homeassistant.components.http import StaticPathConfig as D;await A.http.async_register_static_paths([D(_AE,str(B),cache_headers=_C)])
+	try:from homeassistant.components.http import StaticPathConfig as D;await A.http.async_register_static_paths([D(_AF,str(B),cache_headers=_C)])
 	except(AttributeError,ImportError):
-		try:A.http.register_static_path(_AE,str(B),cache_headers=_C)
+		try:A.http.register_static_path(_AF,str(B),cache_headers=_C)
 		except Exception as E:_LOGGER.warning('Could not register static path for panel: %s',E)
-	websocket_api.async_register_command(A,_ws_get_entries);websocket_api.async_register_command(A,_ws_save_keypad_config);websocket_api.async_register_command(A,_ws_discover_keypads);websocket_api.async_register_command(A,_ws_add_keypad);websocket_api.async_register_command(A,_ws_delete_keypad);websocket_api.async_register_command(A,_ws_license_status);websocket_api.async_register_command(A,_ws_set_license);A.data.setdefault(DOMAIN,{})[C]=_B;A.data[DOMAIN][_AF]=await _load_sidebar_show(A);_update_sidebar_panel(A)
+	websocket_api.async_register_command(A,_ws_get_entries);websocket_api.async_register_command(A,_ws_save_keypad_config);websocket_api.async_register_command(A,_ws_discover_keypads);websocket_api.async_register_command(A,_ws_add_keypad);websocket_api.async_register_command(A,_ws_delete_keypad);websocket_api.async_register_command(A,_ws_license_status);websocket_api.async_register_command(A,_ws_set_license);A.data.setdefault(DOMAIN,{})[C]=_B;A.data[DOMAIN][_AG]=await _load_sidebar_show(A);_update_sidebar_panel(A)
 @callback
-def async_set_sidebar(hass,show):hass.data.setdefault(DOMAIN,{})[_AF]=bool(show);_update_sidebar_panel(hass)
+def async_set_sidebar(hass,show):hass.data.setdefault(DOMAIN,{})[_AG]=bool(show);_update_sidebar_panel(hass)
 @callback
 def _update_sidebar_panel(hass):
-	F='lutron-keypads';E='_sidebar_shown';D='_panel_registered_url';C=hass;A=C.data.setdefault(DOMAIN,{});B=bool(A.get(_AF))
+	F='lutron-keypads';E='_sidebar_shown';D='_panel_registered_url';C=hass;A=C.data.setdefault(DOMAIN,{});B=bool(A.get(_AG))
 	if A.get(D)and A.get(E)==B:return
 	if A.get(D):
 		try:frontend.async_remove_panel(C,F)
 		except Exception:pass
-	try:frontend.async_register_built_in_panel(C,component_name='custom',sidebar_title='Lutron Keypads'if B else _A,sidebar_icon='mdi:keyboard-outline'if B else _A,frontend_url_path=F,config={'_panel_custom':{_G:'lutron-keypad-panel','module_url':_AE}},require_admin=_B);A[D]=_B;A[E]=B
-	except Exception as G:_LOGGER.warning('Could not register Lutron Keypads panel: %s',G)
+	try:frontend.async_register_built_in_panel(C,component_name='custom',sidebar_title=_b if B else _A,sidebar_icon='mdi:keyboard-outline'if B else _A,frontend_url_path=F,config={'_panel_custom':{_G:'lutron-keypad-panel','module_url':_AF}},require_admin=_B);A[D]=_B;A[E]=B
+	except Exception as G:_LOGGER.warning('Could not register Buttons Machine panel: %s',G)
 _SIDEBAR_STORE_KEY='lutron_keypad_controller_sidebar'
 async def _load_sidebar_show(hass):from homeassistant.helpers.storage import Store;A=Store(hass,1,_SIDEBAR_STORE_KEY);B=await A.async_load()or{};return bool(B.get('show',_C))
 async def _save_sidebar_show(hass,show):from homeassistant.helpers.storage import Store;A=Store(hass,1,_SIDEBAR_STORE_KEY);await A.async_save({'show':bool(show)})
 _TRAVEL_STORE_KEY='lutron_keypad_controller_travel'
 _DEFAULT_TRAVEL_S=3e1
 _TRAVEL_SIGNAL='lutron_keypad_controller_travel_updated'
-async def _load_travel(hass):from homeassistant.helpers.storage import Store;B=Store(hass,1,_TRAVEL_STORE_KEY);A=await B.async_load()or{};return{_b:float(A.get(_b)or _DEFAULT_TRAVEL_S),_X:dict(A.get(_X)or{})}
-async def _save_travel(hass):from homeassistant.helpers.storage import Store;B=Store(hass,1,_TRAVEL_STORE_KEY);A=hass.data.setdefault(DOMAIN,{}).get(_y)or{};await B.async_save({_b:float(A.get(_b)or _DEFAULT_TRAVEL_S),_X:dict(A.get(_X)or{})})
+async def _load_travel(hass):from homeassistant.helpers.storage import Store;B=Store(hass,1,_TRAVEL_STORE_KEY);A=await B.async_load()or{};return{_c:float(A.get(_c)or _DEFAULT_TRAVEL_S),_X:dict(A.get(_X)or{})}
+async def _save_travel(hass):from homeassistant.helpers.storage import Store;B=Store(hass,1,_TRAVEL_STORE_KEY);A=hass.data.setdefault(DOMAIN,{}).get(_z)or{};await B.async_save({_c:float(A.get(_c)or _DEFAULT_TRAVEL_S),_X:dict(A.get(_X)or{})})
 @callback
 def _cover_travel_time(hass,cover_id):
-	B=hass.data.get(DOMAIN,{}).get(_y)or{};A=(B.get(_X)or{}).get(cover_id)
+	B=hass.data.get(DOMAIN,{}).get(_z)or{};A=(B.get(_X)or{}).get(cover_id)
 	if A and float(A)>0:return float(A)
-	return float(B.get(_b)or _DEFAULT_TRAVEL_S)
+	return float(B.get(_c)or _DEFAULT_TRAVEL_S)
 @callback
 def _discover_cover_cycle_covers(hass):
 	E=set()
@@ -469,27 +470,29 @@ def _discover_cover_cycle_covers(hass):
 				if isinstance(D,str)and D.startswith('cover.'):E.add(D)
 	return sorted(E)
 async def _calibrate_shade_travel(hass,cover_id):
-	I='lutron_calibrate';H='Lutron Keypad Controller';B=cover_id;A=hass;from homeassistant.helpers.dispatcher import async_dispatcher_send as S;from homeassistant.components.persistent_notification import async_create as F;M=A.data.setdefault(DOMAIN,{});J=M.setdefault('_calibrating',set())
-	if B in J:return
-	J.add(B);D=5.;N=3.;O=_cover_travel_time(A,B)+6.;K=A.states.get(B);E=K.name if K is not _A and K.name else B
-	async def G(service):await A.services.async_call(_z,service,{ATTR_ENTITY_ID:B},blocking=_B)
-	F(A,f"Calibrating '{E}'. It will close, open briefly, then close again (~{int(O+D+N)}s) — please don't operate it meanwhile.",title=H,notification_id=I)
+	H='lutron_calibrate';B=cover_id;A=hass;from homeassistant.helpers.dispatcher import async_dispatcher_send as R;from homeassistant.components.persistent_notification import async_create as F;L=A.data.setdefault(DOMAIN,{});I=L.setdefault('_calibrating',set())
+	if B in I:return
+	I.add(B);D=5.;M=3.;N=_cover_travel_time(A,B)+6.;J=A.states.get(B);E=J.name if J is not _A and J.name else B
+	async def G(service):await A.services.async_call(_A0,service,{ATTR_ENTITY_ID:B},blocking=_B)
+	F(A,f"Calibrating '{E}'. It will close, open briefly, then close again (~{int(N+D+M)}s) — please don't operate it meanwhile.",title=_b,notification_id=H)
 	try:
-		await G(_A0);await asyncio.sleep(O);await G(_AG);await asyncio.sleep(D);await G(_AK);await asyncio.sleep(N);P=A.states.get(B);C=P.attributes.get(_AL)if P is not _A else _A
-		if not C or float(C)<=0:F(A,f"Calibration of '{E}' failed — no movement detected (position={C}). Try again or set the travel time manually.",title=H,notification_id=I);return
-		C=min(float(C),1e2);Q=D*1e2/C;L=int(round(min(max(Q,3.),18e1)))+1;T=M.setdefault(_y,{_b:_DEFAULT_TRAVEL_S,_X:{}});T.setdefault(_X,{})[B]=float(L);await _save_travel(A);S(A,_TRAVEL_SIGNAL);_LOGGER.info("Calibrated '%s': opened to %.0f%% in %.1fs → full travel ≈ %.1fs → travel time set to %ds",E,C,D,Q,L);F(A,f"Calibrated '{E}': reached {C:.0f}% in {int(D)}s → travel time set to {L}s.",title=H,notification_id=I);await G(_A0)
-	except Exception as R:_LOGGER.warning("Calibration of '%s' errored: %s",B,R);F(A,f"Calibration of '{E}' errored: {R}",title=H,notification_id=I)
-	finally:J.discard(B)
+		await G(_A1);await asyncio.sleep(N);await G(_AH);await asyncio.sleep(D);await G(_AL);await asyncio.sleep(M);O=A.states.get(B);C=O.attributes.get(_AM)if O is not _A else _A
+		if not C or float(C)<=0:F(A,f"Calibration of '{E}' failed — no movement detected (position={C}). Try again or set the travel time manually.",title=_b,notification_id=H);return
+		C=min(float(C),1e2);P=D*1e2/C;K=int(round(min(max(P,3.),18e1)))+1;S=L.setdefault(_z,{_c:_DEFAULT_TRAVEL_S,_X:{}});S.setdefault(_X,{})[B]=float(K);await _save_travel(A);R(A,_TRAVEL_SIGNAL);_LOGGER.info("Calibrated '%s': opened to %.0f%% in %.1fs → full travel ≈ %.1fs → travel time set to %ds",E,C,D,P,K);F(A,f"Calibrated '{E}': reached {C:.0f}% in {int(D)}s → travel time set to {K}s.",title=_b,notification_id=H);await G(_A1)
+	except Exception as Q:_LOGGER.warning("Calibration of '%s' errored: %s",B,Q);F(A,f"Calibration of '{E}' errored: {Q}",title=_b,notification_id=H)
+	finally:I.discard(B)
 @callback
 def _async_ensure_controller_entry(hass):
 	A=hass
 	if any(A.data.get(_O)for A in A.config_entries.async_entries(DOMAIN)):return
-	A.async_create_task(A.config_entries.flow.async_init(DOMAIN,context={_v:_AM},data={}))
+	A.async_create_task(A.config_entries.flow.async_init(DOMAIN,context={_w:_AN},data={}))
 async def _async_setup_controller_entry(hass,entry):
-	C=entry;A=hass;await _register_panel_once(A);A.data.setdefault(DOMAIN,{})[_y]=await _load_travel(A);await A.config_entries.async_forward_entry_setups(C,[_P,_A1,_j]);D=dr.async_get(A);B=D.async_get_device(identifiers={(DOMAIN,_AM)})
-	if B is not _A:
-		for E in list(B.config_entries):
-			if E!=C.entry_id:D.async_update_device(B.id,remove_config_entry_id=E)
+	B=entry;A=hass;await _register_panel_once(A)
+	if B.title in('Lutron Keypad Controller','Ctrlable Keypad Controller'):A.config_entries.async_update_entry(B,title=_b)
+	A.data.setdefault(DOMAIN,{})[_z]=await _load_travel(A);await A.config_entries.async_forward_entry_setups(B,[_P,_A2,_k]);D=dr.async_get(A);C=D.async_get_device(identifiers={(DOMAIN,_AN)})
+	if C is not _A:
+		for E in list(C.config_entries):
+			if E!=B.entry_id:D.async_update_device(C.id,remove_config_entry_id=E)
 	return _B
 @callback
 def _controller_entry(hass):
@@ -507,7 +510,7 @@ async def _global_license_key(hass):
 async def _license_key_for_product(hass,product):
 	B=product;A=hass;C=_controller_entry(A)
 	if C is not _A:
-		F=C.options.get(_m)or{};D=(F.get(B)or'').strip()
+		F=C.options.get(_n)or{};D=(F.get(B)or'').strip()
 		if D:return D
 	from.license import EXPECTED_PRODUCT as G
 	if B==G:
@@ -519,44 +522,44 @@ async def async_setup(hass,config):
 	if DOMAIN not in B:return _B
 	E=B[DOMAIN].get('keypads',[]);C=[]
 	for F in E:D=LutronKeypadsController(A,F);C.append(D);D.async_register()
-	A.data[DOMAIN][_A2]=C;A.services.async_register(DOMAIN,_AH,_async_debug_leds);return _B
+	A.data[DOMAIN][_A3]=C;A.services.async_register(DOMAIN,_AI,_async_debug_leds);return _B
 async def async_setup_entry(hass,entry):
 	B=hass;A=entry;B.data.setdefault(DOMAIN,{})
 	if A.data.get(_O):return await _async_setup_controller_entry(B,A)
 	K=B.data[DOMAIN].setdefault('_reload_listeners',set())
 	if A.entry_id not in K:A.add_update_listener(_async_reload_entry);K.add(A.entry_id)
 	await _register_panel_once(B);_async_ensure_controller_entry(B);from.backends import get_backend as Q;E=Q(A).license_product;F=await _license_key_for_product(B,E)
-	if not F:_LOGGER.error("Ctrlable Keypad Controller: no license for module '%s'. Open the panel's License dialog and paste a license for this module (obtain one from portal.ctrlable.com).",E);return _C
+	if not F:_LOGGER.error("Buttons Machine: no license for module '%s'. Open the panel's License dialog and paste a license for this module (obtain one from portal.ctrlable.com).",E);return _C
 	R=await async_get_integration(B,DOMAIN);S=str(R.version)
 	try:D=validate_license_offline(F,current_version=S,expected_product=E)
-	except LicenseError as T:_LOGGER.error("Ctrlable Keypad Controller: license validation failed for module '%s' — %s",E,T);return _C
-	if D.warn_only:_LOGGER.warning('Ctrlable Lutron Keypad: license has expired but warn_only mode is active. Please renew your license.')
+	except LicenseError as T:_LOGGER.error("Buttons Machine: license validation failed for module '%s' — %s",E,T);return _C
+	if D.warn_only:_LOGGER.warning('Buttons Machine: license has expired but warn_only mode is active. Please renew your license.')
 	G=await async_get_instance_id(B)
-	if D.binding=='instance'and D.instance_id and D.instance_id!=G:_LOGGER.error('Ctrlable Lutron Keypad: license is bound to instance %s; this HA is %s.',D.instance_id,G);return _C
+	if D.binding=='instance'and D.instance_id and D.instance_id!=G:_LOGGER.error('Buttons Machine: license is bound to instance %s; this HA is %s.',D.instance_id,G);return _C
 	L=await check_revocation_online(D.jti,instance_id=G)
-	if L is _C:_LOGGER.error('Ctrlable Lutron Keypad: license rejected by portal. Aborting setup.');return _C
-	M=await load_license_cache(B);N=M.get('last_ok')if M.get(_x)==D.jti else _A
+	if L is _C:_LOGGER.error('Buttons Machine: license rejected by portal. Aborting setup.');return _C
+	M=await load_license_cache(B);N=M.get('last_ok')if M.get(_y)==D.jti else _A
 	if L is _B:await save_license_cache(B,D.jti)
 	elif N is not _A:
 		O=(time.time()-N)/86400
-		if O>30:_LOGGER.warning('Ctrlable Lutron Keypad: portal unreachable for %.0f days. Ensure this device can reach portal.ctrlable.com periodically.',O)
+		if O>30:_LOGGER.warning('Buttons Machine: portal unreachable for %.0f days. Ensure this device can reach portal.ctrlable.com periodically.',O)
 	await remember_license_key(B,F,E);C=_controller_entry(B)
 	if C is not _A:
-		H={**C.options};I={**(C.options.get(_m)or{})}
-		if I.get(E)!=F:I[E]=F;H[_m]=I
+		H={**C.options};I={**(C.options.get(_n)or{})}
+		if I.get(E)!=F:I[E]=F;H[_n]=I
 		from.license import EXPECTED_PRODUCT as U
 		if E==U:H[_a]=F
 		if H!=dict(C.options):B.config_entries.async_update_entry(C,options=H)
-	B.data.setdefault(DOMAIN,{});B.data[DOMAIN].setdefault(_A2,[]);B.data[DOMAIN].setdefault(_u,{});await _auto_refresh_button_layout(B,A)
-	if not A.data.get(_i)or _S not in A.data:
+	B.data.setdefault(DOMAIN,{});B.data[DOMAIN].setdefault(_A3,[]);B.data[DOMAIN].setdefault(_v,{});await _auto_refresh_button_layout(B,A)
+	if not A.data.get(_j)or _S not in A.data:
 		async def P(_event=_A):await _auto_refresh_button_layout(B,A)
 		if B.state is CoreState.running:B.async_create_task(P())
 		else:A.async_on_unload(B.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED,P))
-	J=_build_buttons_from_options(A.options.get(_U,{}));V={_G:A.title,CONF_DEVICE_SERIAL:A.data.get(CONF_DEVICE_SERIAL,''),CONF_DEVICE_NAME:A.data.get(CONF_DEVICE_NAME,''),CONF_AREA_NAME:A.data.get(CONF_AREA_NAME,''),CONF_KEYPAD_TYPE:A.data.get(CONF_KEYPAD_TYPE,_A6),_F:A.data.get(_F,''),_i:A.data.get(_i,[]),_A9:A.data.get(_A9,[]),_AA:A.data.get(_AA),_AB:A.data.get(_AB),_r:A.data.get(_r,{}),_s:A.data.get(_s,{}),CONF_BUTTONS:J};C=LutronKeypadsController(B,V,config_entry=A)
+	J=_build_buttons_from_options(A.options.get(_U,{}));V={_G:A.title,CONF_DEVICE_SERIAL:A.data.get(CONF_DEVICE_SERIAL,''),CONF_DEVICE_NAME:A.data.get(CONF_DEVICE_NAME,''),CONF_AREA_NAME:A.data.get(CONF_AREA_NAME,''),CONF_KEYPAD_TYPE:A.data.get(CONF_KEYPAD_TYPE,_A7),_F:A.data.get(_F,''),_j:A.data.get(_j,[]),_AA:A.data.get(_AA,[]),_AB:A.data.get(_AB),_AC:A.data.get(_AC),_s:A.data.get(_s,{}),_t:A.data.get(_t,{}),CONF_BUTTONS:J};C=LutronKeypadsController(B,V,config_entry=A)
 	if J:C.async_register();_LOGGER.info("Keypad '%s' loaded from UI options with %d button(s)",A.title,len(J))
 	else:_LOGGER.info("Keypad '%s' loaded (no buttons configured yet). Click the gear icon to configure buttons, or add YAML under lutron_keypad_controller:",A.title)
-	B.data[DOMAIN][_u][A.entry_id]=C;B.data[DOMAIN][_A2].append(C)
-	if not B.services.has_service(DOMAIN,_AH):B.services.async_register(DOMAIN,_AH,_async_debug_leds)
+	B.data[DOMAIN][_v][A.entry_id]=C;B.data[DOMAIN][_A3].append(C)
+	if not B.services.has_service(DOMAIN,_AI):B.services.async_register(DOMAIN,_AI,_async_debug_leds)
 	await C.async_initialize();await _cleanup_orphaned_entities(B,A);await B.config_entries.async_forward_entry_setups(A,PLATFORMS);B.async_create_background_task(periodic_revocation_check(B,D.jti,A.entry_id,instance_id=G),name=f"lutron_keypad_license_check_{A.entry_id}");return _B
 async def _cleanup_orphaned_entities(hass,entry):
 	D=entry;B=er.async_get(hass)
@@ -568,28 +571,28 @@ async def _cleanup_orphaned_entities(hass,entry):
 		elif C in(f"{D.entry_id}_show_in_sidebar",f"{DOMAIN}_show_in_sidebar"):B.async_remove(A.entity_id);_LOGGER.info('Removed old sidebar switch: %s',A.entity_id)
 async def async_unload_entry(hass,entry):
 	B=entry;A=hass
-	if B.data.get(_O):return await A.config_entries.async_unload_platforms(B,[_P,_A1,_j])
-	D=await A.config_entries.async_unload_platforms(B,PLATFORMS);C=A.data[DOMAIN].get(_u,{}).pop(B.entry_id,_A)
+	if B.data.get(_O):return await A.config_entries.async_unload_platforms(B,[_P,_A2,_k])
+	D=await A.config_entries.async_unload_platforms(B,PLATFORMS);C=A.data[DOMAIN].get(_v,{}).pop(B.entry_id,_A)
 	if C is not _A:
 		C.async_unregister()
-		try:A.data[DOMAIN][_A2].remove(C)
+		try:A.data[DOMAIN][_A3].remove(C)
 		except ValueError:pass
 	return D
 async def _async_reload_entry(hass,entry):await hass.config_entries.async_reload(entry.entry_id)
 def _normalize_led_map(raw_led_map,config_entry):
 	C=config_entry;A=raw_led_map
 	if not A:return A
-	F=C.data;D=get_button_list(F.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC));G={A[_A1]for A in D}
+	F=C.data;D=get_button_list(F.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC));G={A[_A2]for A in D}
 	if any(A in G for A in A):return A
-	H=sorted(A[_A1]for A in D if not A['is_raise']and not A['is_lower']);E=sorted(A.keys());B={}
+	H=sorted(A[_A2]for A in D if not A['is_raise']and not A['is_lower']);E=sorted(A.keys());B={}
 	for(I,J)in zip(H,E):B[I]=A[J]
 	_LOGGER.info("'%s': LED map: LEAP global IDs %s → sequential button numbers %s",C.title,E,list(B.keys()));return B
 class LutronKeypadsController:
 	def __init__(A,hass,config,config_entry=_A):
-		C=config_entry;B=config;A.hass=hass;A.name=B[_G];A.serial=str(B.get(CONF_DEVICE_SERIAL,'')).strip();A.device_id=str(B.get(_F,'')).strip();A.device_name=B.get(CONF_DEVICE_NAME,'').strip().lower();A.area_name=B.get(CONF_AREA_NAME,'').strip().lower();A.keypad_type=B.get(CONF_KEYPAD_TYPE,_A6);A.scene_group=B.get(_M,'').strip();A._config_entry=C;from.backends import get_backend as E;A._backend=E(C);A._buttons={}
+		C=config_entry;B=config;A.hass=hass;A.name=B[_G];A.serial=str(B.get(CONF_DEVICE_SERIAL,'')).strip();A.device_id=str(B.get(_F,'')).strip();A.device_name=B.get(CONF_DEVICE_NAME,'').strip().lower();A.area_name=B.get(CONF_AREA_NAME,'').strip().lower();A.keypad_type=B.get(CONF_KEYPAD_TYPE,_A7);A.scene_group=B.get(_M,'').strip();A._config_entry=C;from.backends import get_backend as E;A._backend=E(C);A._buttons={}
 		for D in B.get(CONF_BUTTONS,[]):A._buttons[D[CONF_BUTTON_NUMBER]]=D
 		A._active_scene_btn=_A;A._last_action=_A;A._cover_states={};A._cover_cycle_mem={};A._light_dim_indices={};A._native_consumed=set();A._unsubscribe=_A;A._led_map={};A._button_switches={};A._leap_btn_map={}
-		if C is not _A:F=C.data.get(_s,{});A._leap_btn_map={int(A):B for(A,B)in F.items()}
+		if C is not _A:F=C.data.get(_t,{});A._leap_btn_map={int(A):B for(A,B)in F.items()}
 		A._press_times={};A._last_press_times={};A._last_dispatch_times={};A._held={};A._confirm_handles={};A._ramp_tasks={};A._ramp_dirs={};A._ramp_end_times={};A._state_sensors=[];A._entity_tracking_unsubs=[]
 	@callback
 	def async_register(self):A=self;A._unsubscribe=A._backend.subscribe(A.hass,A)
@@ -598,7 +601,7 @@ class LutronKeypadsController:
 		A=self
 		for B in A._entity_tracking_unsubs:B()
 		A._entity_tracking_unsubs.clear()
-		if A._unsubscribe is not _A:A._unsubscribe();A._unsubscribe=_A;_LOGGER.debug("Lutron Keypad Controller '%s' unregistered",A.name)
+		if A._unsubscribe is not _A:A._unsubscribe();A._unsubscribe=_A;_LOGGER.debug("Buttons Machine '%s' unregistered",A.name)
 		for C in A._confirm_handles.values():C.cancel()
 		A._confirm_handles.clear()
 		for D in A._ramp_tasks.values():D.cancel()
@@ -614,12 +617,12 @@ class LutronKeypadsController:
 				J=str(B.get(_K,''));K=str(B.get(_F,''))
 				if J!=A.serial and K!=A.device_id:continue
 				C+=1;D=_A
-				for L in(_A8,_AC):
+				for L in(_A9,_AD):
 					G=B.get(L)
 					if G is not _A:
 						try:D=int(G);break
 						except(TypeError,ValueError):pass
-				H=B.get(_AC)
+				H=B.get(_AD)
 				if D is not _A and H is not _A:
 					try:A._leap_btn_map[int(H)]=D
 					except(TypeError,ValueError):pass
@@ -645,24 +648,24 @@ class LutronKeypadsController:
 		elif D==LED_MODE_PATHWAY:A._update_pathway_mode_led(B,C)
 		else:A._update_room_mode_led(B,C)
 	@callback
-	def _update_room_mode_led(self,btn_num,entities):B=btn_num;A=self;C=any((D:=A.hass.states.get(B))is not _A and D.state not in(_n,_o,_A3,_W,_k)for B in entities);A._update_button_switch_state(B,C);A.hass.async_create_task(A._write_led_entity(B,C))
+	def _update_room_mode_led(self,btn_num,entities):B=btn_num;A=self;C=any((D:=A.hass.states.get(B))is not _A and D.state not in(_o,_p,_A4,_W,_l)for B in entities);A._update_button_switch_state(B,C);A.hass.async_create_task(A._write_led_entity(B,C))
 	@callback
-	def _update_pathway_mode_led(self,btn_num,entities):C=entities;B=btn_num;A=self;D=bool(C)and all((E:=A.hass.states.get(B))is not _A and E.state not in(_n,_o,_A3,_W,_k)for B in C);A._update_button_switch_state(B,D);A.hass.async_create_task(A._write_led_entity(B,D))
+	def _update_pathway_mode_led(self,btn_num,entities):C=entities;B=btn_num;A=self;D=bool(C)and all((E:=A.hass.states.get(B))is not _A and E.state not in(_o,_p,_A4,_W,_l)for B in C);A._update_button_switch_state(B,D);A.hass.async_create_task(A._write_led_entity(B,D))
 	@callback
 	def _update_scene_mode_led(self,btn_num,entities):
 		D=entities;B=btn_num;A=self;C=A._buttons.get(B,{});I=int(C.get(CONF_TARGET_BRIGHTNESS)or 0);J=int(C.get(CONF_TARGET_COLOR_TEMP)or 0);K=C.get(CONF_ENTITY_SETTINGS,{})
 		def F(eid):
 			D=eid;B=A.hass.states.get(D)
-			if B is _A or B.state in(_n,_o,_A3,_W,_k):return _C
+			if B is _A or B.state in(_o,_p,_A4,_W,_l):return _C
 			if not D.startswith(_N):return _B
-			E=K.get(D,{});F=int(E.get(_H)or I);G=int(E.get(_c)or J)
+			E=K.get(D,{});F=int(E.get(_H)or I);G=int(E.get(_d)or J)
 			if F>0:
 				L=round((B.attributes.get(_H,0)or 0)/255*100)
 				if abs(L-F)>5:return _C
 			if G>0:
-				C=B.attributes.get(_AI)
+				C=B.attributes.get(_AJ)
 				if C is _A:
-					H=B.attributes.get(_c)
+					H=B.attributes.get(_d)
 					if H:C=round(1000000/H)
 				if C is not _A and abs(int(C)-G)>100:return _C
 			return _B
@@ -726,7 +729,7 @@ class LutronKeypadsController:
 		if A.serial:
 			D=str(B.get(_K,'')).strip()
 			if D and D==str(A.serial):return _B
-		E=str(B.get('device_name','')).lower();F=str(B.get(_AD,'')).lower()
+		E=str(B.get('device_name','')).lower();F=str(B.get(_AE,'')).lower()
 		if A.device_name and A.area_name:return E==A.device_name and F==A.area_name
 		if A.device_name:return E==A.device_name
 		if A.area_name:return F==A.area_name
@@ -746,9 +749,9 @@ class LutronKeypadsController:
 	def _handle_native_button(self,btn_num,btn_cfg,action):
 		D=action;C=btn_cfg;B=btn_num;A=self
 		if D=='press':A._held.pop(B,_A);A._native_consumed.discard(B);return
-		if D==_g:_LOGGER.info("'%s': button %d HOLD (native)",A.name,B);A._native_consumed.add(B);A._on_hold_event(B);return
-		if D==_f:
-			_LOGGER.info("'%s': button %d DOUBLE TAP (native)",A.name,B);A._native_consumed.add(B);F=C.get(_h,{}).get(_f,{})
+		if D==_h:_LOGGER.info("'%s': button %d HOLD (native)",A.name,B);A._native_consumed.add(B);A._on_hold_event(B);return
+		if D==_g:
+			_LOGGER.info("'%s': button %d DOUBLE TAP (native)",A.name,B);A._native_consumed.add(B);F=C.get(_i,{}).get(_g,{})
 			if F.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE:G=A._merge_v2_block(C,F);A.hass.async_create_task(A._dispatch(B,G))
 			else:A.hass.async_create_task(A._dispatch(B,C))
 			return
@@ -767,9 +770,9 @@ class LutronKeypadsController:
 		if G is not _A:G.cancel()
 		E=A._ramp_tasks.pop(B,_A)
 		if E is not _A and not E.done():E.cancel()
-		H=A._last_press_times.get(B,0);A._last_press_times[B]=D;A._press_times[B]=D;A._held[B]=_C;I=C.get(_h,{});J=I.get(_f,{})
+		H=A._last_press_times.get(B,0);A._last_press_times[B]=D;A._press_times[B]=D;A._held[B]=_C;I=C.get(_i,{});J=I.get(_g,{})
 		if D-H<A._DOUBLE_TAP_WINDOW and J.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE:_LOGGER.info("'%s': button %d DOUBLE TAP (%.3fs since last press)",A.name,B,D-H);L=A._merge_v2_block(C,J);A.hass.async_create_task(A._dispatch(B,L));return
-		K=C.get(CONF_ACTION_TYPE);M=I.get(_g,{});N=M.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE and not C.get(_Q,_C);O=K in A._HOLD_ACTIONS or C.get(_Q,_C)or N
+		K=C.get(CONF_ACTION_TYPE);M=I.get(_h,{});N=M.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE and not C.get(_Q,_C);O=K in A._HOLD_ACTIONS or C.get(_Q,_C)or N
 		if not O:A._last_dispatch_times[B]=D;A.hass.async_create_task(A._dispatch(B,C))
 		else:P=A._HOLD_CONFIRM_CYCLE if K==ACTION_ENTITY_TOGGLE and C.get(_Q,_C)else A._HOLD_CONFIRM;Q=A.hass.loop.call_later(P,A._on_hold_event,B);A._confirm_handles[B]=Q
 	@callback
@@ -793,10 +796,10 @@ class LutronKeypadsController:
 	def _on_hold_event(self,btn_num):
 		B=btn_num;A=self;A._confirm_handles.pop(B,_A);C=A._buttons.get(B)
 		if C is _A:return
-		F=C.get(CONF_ACTION_TYPE);G=C.get(_Q,_C);_LOGGER.debug("'%s': button %d hold event — action=%s cycle_dim=%s led_mode=%s (hold-to-dim is driven by cycle_dim, NOT led_mode)",A.name,B,F,G,C.get(CONF_LED_MODE));I=C.get(_h,{});H=I.get(_g,{})
+		F=C.get(CONF_ACTION_TYPE);G=C.get(_Q,_C);_LOGGER.debug("'%s': button %d hold event — action=%s cycle_dim=%s led_mode=%s (hold-to-dim is driven by cycle_dim, NOT led_mode)",A.name,B,F,G,C.get(CONF_LED_MODE));I=C.get(_i,{});H=I.get(_h,{})
 		if not G and H.get(CONF_ACTION_TYPE,ACTION_NONE)!=ACTION_NONE:_LOGGER.info("'%s': button %d HOLD — dispatching custom hold action '%s'",A.name,B,H.get(CONF_ACTION_TYPE));A._held[B]=_B;J=A._merge_v2_block(C,H);A.hass.async_create_task(A._dispatch(B,J));return
-		if F==ACTION_RAISE:E=_p;D=A._get_last_ramp_lights()
-		elif F==ACTION_LOWER:E=_d;D=A._get_last_ramp_lights()
+		if F==ACTION_RAISE:E=_q;D=A._get_last_ramp_lights()
+		elif F==ACTION_LOWER:E=_e;D=A._get_last_ramp_lights()
 		elif F==ACTION_LIGHT_CYCLE_DIM or G:D=A._get_btn_light_entities(C);E=A._next_ramp_dir(B,D);_LOGGER.info("'%s': button %d HOLD — cycle_dim ramp %s on %s",A.name,B,E,D)
 		else:_LOGGER.debug("'%s': button %d hold with 'Hold to dim' off — dispatching, no dim",A.name,B);A._held[B]=_B;A.hass.async_create_task(A._dispatch(B,C));return
 		if not D:_LOGGER.debug("'%s': button %d hold event — no rampable lights, dispatching",A.name,B);A._held[B]=_B;A.hass.async_create_task(A._dispatch(B,C));return
@@ -809,14 +812,14 @@ class LutronKeypadsController:
 				for B in entities:
 					E=A.hass.states.get(B)
 					if E is _A:continue
-					if E.state==_n:
-						if C==_p:await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_e:1},blocking=_C);D=_C
+					if E.state==_o:
+						if C==_q:await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_f:1},blocking=_C);D=_C
 						continue
-					F=round((E.attributes.get(_H,0)or 0)/255*100);G=min(100,F+A._RAMP_STEP_PCT)if C==_p else max(0,F-A._RAMP_STEP_PCT)
+					F=round((E.attributes.get(_H,0)or 0)/255*100);G=min(100,F+A._RAMP_STEP_PCT)if C==_q else max(0,F-A._RAMP_STEP_PCT)
 					if G==F:continue
 					D=_C
-					if C==_d and G<=0:await A.hass.services.async_call(_I,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_C)
-					else:await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_e:G,_A4:A._RAMP_INTERVAL},blocking=_C)
+					if C==_e and G<=0:await A.hass.services.async_call(_I,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_C)
+					else:await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_f:G,_A5:A._RAMP_INTERVAL},blocking=_C)
 				if D:break
 				await asyncio.sleep(A._RAMP_INTERVAL)
 		except asyncio.CancelledError:pass
@@ -825,9 +828,9 @@ class LutronKeypadsController:
 	def _next_ramp_dir(A,btn_num,entities=_A):
 		D=entities;C=btn_num;F=asyncio.get_event_loop().time();E=A._ramp_end_times.get(C)
 		if E is _A or F-E>A._RAMP_DIR_RESET_WINDOW:
-			if D and all(A._light_at_max(B)for B in D):B=_d
-			else:B=_p
-		else:G=A._ramp_dirs.get(C,_d);B=_p if G==_d else _d
+			if D and all(A._light_at_max(B)for B in D):B=_e
+			else:B=_q
+		else:G=A._ramp_dirs.get(C,_e);B=_q if G==_e else _e
 		A._ramp_dirs[C]=B;return B
 	def _light_at_max(B,eid):
 		A=B.hass.states.get(eid)
@@ -850,63 +853,63 @@ class LutronKeypadsController:
 		if B in(ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_LIGHT_CYCLE_DIM):return[A for A in _normalize_targets(A.get(CONF_ACTION_TARGET,[]))if A.startswith(_N)]
 		if B==ACTION_STATEFUL_SCENE:
 			C=A.get(CONF_ACTION_TARGET,'');D=E.hass.states.get(C)if C else _A
-			if D:return[A for A in D.attributes.get(_AN,[])if A.startswith(_N)]
+			if D:return[A for A in D.attributes.get(_AO,[])if A.startswith(_N)]
 		if A.get(_Q,_C):return[A for A in _normalize_targets(A.get(CONF_ACTION_TARGET,[]))if A.startswith(_N)]
 		return[]
 	def _scene_light_entities(B,scene_id):
 		A=B.hass.states.get(scene_id)
 		if A is _A:return[]
-		return[A for A in A.attributes.get(_AN,[])if A.startswith(_N)]
+		return[A for A in A.attributes.get(_AO,[])if A.startswith(_N)]
 	def _get_last_ramp_lights(A):
 		if A._last_action is _A:return[]
 		B=A._last_action.get(_J,[])
 		if B:return[A for A in B if A.startswith(_N)]
 		D=A._last_action.get(_D)
-		if D in(ACTION_STATEFUL_SCENE,ACTION_HA_SCENE):C=A._last_action.get(_A5,'');return A._scene_light_entities(C)if C else[]
+		if D in(ACTION_STATEFUL_SCENE,ACTION_HA_SCENE):C=A._last_action.get(_A6,'');return A._scene_light_entities(C)if C else[]
 		return[]
 	async def _dispatch(A,btn_num,btn_cfg):
 		X='delay';W='fade';G=btn_cfg;C=btn_num;F=G[CONF_ACTION_TYPE];I=G.get(CONF_ACTION_TARGET);S=G.get(CONF_ACTION_PARAMS,{})
 		if F==ACTION_NONE:return
-		elif F==ACTION_HA_SCENE:await A._activate_scene(I);await A._write_led_entity(C,_B);A._last_action={_D:ACTION_HA_SCENE,_A5:I}
+		elif F==ACTION_HA_SCENE:await A._activate_scene(I);await A._write_led_entity(C,_B);A._last_action={_D:ACTION_HA_SCENE,_A6:I}
 		elif F==ACTION_STATEFUL_SCENE:await A._activate_stateful_scene(C,G,I)
 		elif F==ACTION_AUTOMATION:await A._trigger_automation(I);await A._write_led_entity(C,_B)
 		elif F==ACTION_SCRIPT:await A._run_script(I,S);await A._write_led_entity(C,_B)
 		elif F==ACTION_ENTITY_TOGGLE:
-			D=_normalize_targets(I);O=int(G.get(CONF_TARGET_BRIGHTNESS)or 0);P=int(G.get(CONF_TARGET_COLOR_TEMP)or 0);J=G.get(CONF_ENTITY_SETTINGS,{});Z=G.get(CONF_LED_MODE,LED_MODE_ROOM);a=G.get(_h,{});b=a.get(_A7,{});U=b.get('entity_settings',{})
+			D=_normalize_targets(I);O=int(G.get(CONF_TARGET_BRIGHTNESS)or 0);P=int(G.get(CONF_TARGET_COLOR_TEMP)or 0);J=G.get(CONF_ENTITY_SETTINGS,{});Z=G.get(CONF_LED_MODE,LED_MODE_ROOM);a=G.get(_i,{});b=a.get(_A8,{});U=b.get('entity_settings',{})
 			if Z==LED_MODE_SCENE:
 				if A._is_btn_led_on(C):
 					_LOGGER.info("'%s': button %d PRESS OFF (scene mode) — LED was ON, applying off_level to %s",A.name,C,D)
 					for B in D:
 						H=B.split(_Y)[0];V=U.get(B,{});K=int(V.get(_H)or 0)
-						if H==_I and K>0:_LOGGER.info("'%s': button %d  → %s dim to %d%%",A.name,C,B,K);await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_e:K},blocking=_B)
+						if H==_I and K>0:_LOGGER.info("'%s': button %d  → %s dim to %d%%",A.name,C,B,K);await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_f:K},blocking=_B)
 						else:_LOGGER.info("'%s': button %d  → %s turn OFF",A.name,C,B);await A.hass.services.async_call(H,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_B)
 					A._last_action={_D:ACTION_ENTITY_TOGGLE,_J:D};await A._write_led_entity(C,_C)
 				else:
 					_LOGGER.info("'%s': button %d PRESS ON (scene mode) — LED was OFF, activating scene on %s",A.name,C,D)
 					for B in D:
-						if B.startswith(_N):E=J.get(B,{});L=int(E.get(_H)or O);M=int(E.get(_c)or P);Q=E.get(_q);N=float(E.get(W)or 0);R=float(E.get(X)or 0);_LOGGER.info("'%s': button %d  → %s bri=%d%% cct=%dK fade=%.1fs",A.name,C,B,L,M,N);await A._apply_light_settings(B,L,M,Q,N,R)
+						if B.startswith(_N):E=J.get(B,{});L=int(E.get(_H)or O);M=int(E.get(_d)or P);Q=E.get(_r);N=float(E.get(W)or 0);R=float(E.get(X)or 0);_LOGGER.info("'%s': button %d  → %s bri=%d%% cct=%dK fade=%.1fs",A.name,C,B,L,M,N);await A._apply_light_settings(B,L,M,Q,N,R)
 						else:H=B.split(_Y)[0];await A.hass.services.async_call(H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B},blocking=_B)
 					A._last_action={_D:ACTION_ENTITY_TOGGLE,_J:D}
 			else:
 				T=_C
-				if D:Y=A.hass.states.get(D[0]);T=Y is not _A and Y.state not in(_n,_o,_A3,_W,_k)
-				c=any(int(J.get(A,{}).get(_H)or O)>0 or int(J.get(A,{}).get(_c)or P)>0 or bool(J.get(A,{}).get(_q))for A in D if A.startswith(_N))if D else _C
+				if D:Y=A.hass.states.get(D[0]);T=Y is not _A and Y.state not in(_o,_p,_A4,_W,_l)
+				c=any(int(J.get(A,{}).get(_H)or O)>0 or int(J.get(A,{}).get(_d)or P)>0 or bool(J.get(A,{}).get(_r))for A in D if A.startswith(_N))if D else _C
 				if not T and c:
 					for B in D:
-						if B.startswith(_N):E=J.get(B,{});L=int(E.get(_H)or O);M=int(E.get(_c)or P);Q=E.get(_q);N=float(E.get(W)or 0);R=float(E.get(X)or 0);await A._apply_light_settings(B,L,M,Q,N,R)
+						if B.startswith(_N):E=J.get(B,{});L=int(E.get(_H)or O);M=int(E.get(_d)or P);Q=E.get(_r);N=float(E.get(W)or 0);R=float(E.get(X)or 0);await A._apply_light_settings(B,L,M,Q,N,R)
 						else:H=B.split(_Y)[0];await A.hass.services.async_call(H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B},blocking=_B)
 					A._last_action={_D:ACTION_ENTITY_TOGGLE,_J:D};await A._write_led_entity(C,_B)
 				elif T and U:
 					for B in D:
 						H=B.split(_Y)[0];V=U.get(B,{});K=int(V.get(_H)or 0)
-						if H==_I and K>0:await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_e:K},blocking=_B)
+						if H==_I and K>0:await A.hass.services.async_call(_I,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B,_f:K},blocking=_B)
 						else:await A.hass.services.async_call(H,SERVICE_TURN_OFF,{ATTR_ENTITY_ID:B},blocking=_B)
 					A._last_action={_D:ACTION_ENTITY_TOGGLE,_J:D};await A._write_led_entity(C,_C)
 				else:await A._entity_toggle(I);await A._write_led_entity(C,not T)
 		elif F==ACTION_SINGLE_ACTION:
 			D=_normalize_targets(I);O=int(G.get(CONF_TARGET_BRIGHTNESS)or 0);P=int(G.get(CONF_TARGET_COLOR_TEMP)or 0);J=G.get(CONF_ENTITY_SETTINGS,{});_LOGGER.info("'%s': button %d SINGLE ACTION — activating %s",A.name,C,D)
 			for B in D:
-				if B.startswith(_N):E=J.get(B,{});L=int(E.get(_H)or O);M=int(E.get(_c)or P);Q=E.get(_q);N=float(E.get(W)or 0);R=float(E.get(X)or 0);await A._apply_light_settings(B,L,M,Q,N,R)
+				if B.startswith(_N):E=J.get(B,{});L=int(E.get(_H)or O);M=int(E.get(_d)or P);Q=E.get(_r);N=float(E.get(W)or 0);R=float(E.get(X)or 0);await A._apply_light_settings(B,L,M,Q,N,R)
 				else:H=B.split(_Y)[0];await A.hass.services.async_call(H,SERVICE_TURN_ON,{ATTR_ENTITY_ID:B},blocking=_B)
 			A._last_action={_D:ACTION_SINGLE_ACTION,_J:D}
 		elif F==ACTION_COVER_CYCLE:await A._cover_cycle(C,I)
@@ -914,29 +917,29 @@ class LutronKeypadsController:
 		elif F==ACTION_RAISE:await A._raise(S)
 		elif F==ACTION_LOWER:await A._lower(S)
 		else:_LOGGER.error("'%s': unknown action_type '%s'",A.name,F);return
-		if A._last_action is not _A and F not in(ACTION_RAISE,ACTION_LOWER):A._last_action[_j]=C
+		if A._last_action is not _A and F not in(ACTION_RAISE,ACTION_LOWER):A._last_action[_k]=C
 		A._notify_state_sensors()
 	async def _apply_light_settings(E,eid,bri,cct,hs_color=_A,fade=0,delay=0):
 		H=delay;G=hs_color;F=eid;D=cct;C=bri;A=fade
 		if H>0:await asyncio.sleep(H)
 		if C>0 and D>0:
-			I={ATTR_ENTITY_ID:F,_AI:D}
-			if A>0:I[_A4]=A
-			await E.hass.services.async_call(_I,SERVICE_TURN_ON,I,blocking=_B);J={ATTR_ENTITY_ID:F,_e:C}
-			if A>0:J[_A4]=A
+			I={ATTR_ENTITY_ID:F,_AJ:D}
+			if A>0:I[_A5]=A
+			await E.hass.services.async_call(_I,SERVICE_TURN_ON,I,blocking=_B);J={ATTR_ENTITY_ID:F,_f:C}
+			if A>0:J[_A5]=A
 			await E.hass.services.async_call(_I,SERVICE_TURN_ON,J,blocking=_B)
 		else:
 			B={ATTR_ENTITY_ID:F}
-			if C>0:B[_e]=C
-			if D>0:B[_AI]=D
-			if G:B[_q]=G
-			if A>0:B[_A4]=A
+			if C>0:B[_f]=C
+			if D>0:B[_AJ]=D
+			if G:B[_r]=G
+			if A>0:B[_A5]=A
 			await E.hass.services.async_call(_I,SERVICE_TURN_ON,B,blocking=_B)
 	async def _activate_scene(B,scene_id):A=scene_id;await B.hass.services.async_call('scene','turn_on',{ATTR_ENTITY_ID:A},blocking=_B);_LOGGER.debug('Scene activated: %s',A)
 	async def _activate_stateful_scene(A,btn_num,btn_cfg,scene_id):
 		D=btn_cfg;C=scene_id;B=btn_num;await A._activate_scene(C);A._active_scene_btn=B;E=D.get(_M)or A.scene_group
 		if E:_SCENE_GROUPS[E]=B
-		await A._sync_leds(B);await A._write_group_leds(B,D);A._last_action={_D:ACTION_STATEFUL_SCENE,_A5:C,_j:B};_LOGGER.debug("Stateful scene '%s' activated on btn %d",C,B)
+		await A._sync_leds(B);await A._write_group_leds(B,D);A._last_action={_D:ACTION_STATEFUL_SCENE,_A6:C,_k:B};_LOGGER.debug("Stateful scene '%s' activated on btn %d",C,B)
 	async def _trigger_automation(A,automation_id):B=automation_id;await A.hass.services.async_call('automation','trigger',{ATTR_ENTITY_ID:B,'skip_condition':_B},blocking=_B);A._last_action={_D:ACTION_AUTOMATION,_E:B}
 	async def _run_script(B,script_id,params):
 		D=params;C=script_id;A='variables';E={ATTR_ENTITY_ID:C}
@@ -950,17 +953,17 @@ class LutronKeypadsController:
 	async def _cover_cycle(B,btn_num,targets):
 		T='moving';P='close';O='phase';N='ts';G=btn_num;F='open';E='dir';C=_normalize_targets(targets)
 		if not C:return
-		H=B.hass.states.get(C[0]);L=H.state if H is not _A else _A;I=H.attributes.get(_AL)if H is not _A else _A;M=asyncio.get_event_loop().time();A=B._cover_cycle_mem.get(G);J=M-A.get(N,0)if A else 1e9;U=A is not _A and J<=B._COVER_CYCLE_WINDOW;V=_cover_travel_time(B.hass,C[0]);Q=bool(A and A.get(O)==T and J<V)
-		if Q:K=_AK;B._cover_cycle_mem[G]={O:'idle',E:A[E],N:M}
+		H=B.hass.states.get(C[0]);L=H.state if H is not _A else _A;I=H.attributes.get(_AM)if H is not _A else _A;M=asyncio.get_event_loop().time();A=B._cover_cycle_mem.get(G);J=M-A.get(N,0)if A else 1e9;U=A is not _A and J<=B._COVER_CYCLE_WINDOW;V=_cover_travel_time(B.hass,C[0]);Q=bool(A and A.get(O)==T and J<V)
+		if Q:K=_AL;B._cover_cycle_mem[G]={O:'idle',E:A[E],N:M}
 		else:
 			if I is not _A:R=I<=0;S=I>=100
-			else:R=L==_o;S=L==F
+			else:R=L==_p;S=L==F
 			if R:D=F
 			elif S:D=P
 			elif U and A and A.get(E):D=P if A[E]==F else F
 			else:D=P
-			K=_AG if D==F else _A0;B._cover_cycle_mem[G]={O:T,E:D,N:M}
-		await B.hass.services.async_call(_z,K,{ATTR_ENTITY_ID:C},blocking=_B);B._last_action={_D:ACTION_COVER_CYCLE,_J:C,'state':K};_LOGGER.debug("'%s': button %d cover cycle — state=%s pos=%s since=%.1fs prev=%s moving=%s → %s",B.name,G,L,I,J if J<1e8 else-1,A,Q,K)
+			K=_AH if D==F else _A1;B._cover_cycle_mem[G]={O:T,E:D,N:M}
+		await B.hass.services.async_call(_A0,K,{ATTR_ENTITY_ID:C},blocking=_B);B._last_action={_D:ACTION_COVER_CYCLE,_J:C,'state':K};_LOGGER.debug("'%s': button %d cover cycle — state=%s pos=%s since=%.1fs prev=%s moving=%s → %s",B.name,G,L,I,J if J<1e8 else-1,A,Q,K)
 	async def _light_cycle_dim(A,btn_num,targets,levels):
 		E=btn_num;D=levels;B=_normalize_targets(targets);C=A._light_dim_indices.get(E,len(D))
 		if C>=len(D):C=0
@@ -972,13 +975,13 @@ class LutronKeypadsController:
 		B=A._last_action.get(_J,[])
 		if B:return[A for A in B if A.startswith(_N)]
 		D=A._last_action.get(_D)
-		if D in(ACTION_STATEFUL_SCENE,ACTION_HA_SCENE):C=A._last_action.get(_A5,'');return A._scene_light_entities(C)if C else[]
+		if D in(ACTION_STATEFUL_SCENE,ACTION_HA_SCENE):C=A._last_action.get(_A6,'');return A._scene_light_entities(C)if C else[]
 		return[]
 	async def _raise(A,params):
 		if A._last_action is _A:_LOGGER.debug("'%s': RAISE pressed but no prior context",A.name);return
 		D=A._last_action;F=D.get(_D);B=D.get(_J,[])
 		if F==ACTION_COVER_CYCLE or _entities_are_covers(B):
-			await A.hass.services.async_call(_z,_AG,{ATTR_ENTITY_ID:B},blocking=_B)
+			await A.hass.services.async_call(_A0,_AH,{ATTR_ENTITY_ID:B},blocking=_B)
 			for(G,C)in A._buttons.items():
 				if C.get(CONF_ACTION_TYPE)==ACTION_COVER_CYCLE and C.get(CONF_ACTION_TARGET):
 					H=_normalize_targets(C[CONF_ACTION_TARGET])
@@ -991,7 +994,7 @@ class LutronKeypadsController:
 		if A._last_action is _A:_LOGGER.debug("'%s': LOWER pressed but no prior context",A.name);return
 		D=A._last_action;F=D.get(_D);B=D.get(_J,[])
 		if F==ACTION_COVER_CYCLE or _entities_are_covers(B):
-			await A.hass.services.async_call(_z,_A0,{ATTR_ENTITY_ID:B},blocking=_B)
+			await A.hass.services.async_call(_A0,_A1,{ATTR_ENTITY_ID:B},blocking=_B)
 			for(G,C)in A._buttons.items():
 				if C.get(CONF_ACTION_TYPE)==ACTION_COVER_CYCLE and C.get(CONF_ACTION_TARGET):
 					H=_normalize_targets(C[CONF_ACTION_TARGET])

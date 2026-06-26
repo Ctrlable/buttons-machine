@@ -76,7 +76,7 @@
       },
       "license": {
         "title": "License",
-        "description": "Paste your Lutron Keypad Controller license key (JWT) from [portal.ctrlable.com](https://portal.ctrlable.com).\n\nThe integration will not run without a valid license. After saving, the entry reloads and the license is validated.\n\nThis Home Assistant instance ID (for instance-bound licenses): `{instance_id}`",
+        "description": "Paste your Buttons Machine license key (JWT) from [portal.ctrlable.com](https://portal.ctrlable.com).\n\nThe integration will not run without a valid license. After saving, the entry reloads and the license is validated.\n\nThis Home Assistant instance ID (for instance-bound licenses): `{instance_id}`",
         "data": {
           "license_key": "License key"
         }
