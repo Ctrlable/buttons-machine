@@ -439,7 +439,7 @@ class LutronKeypadsOptionsFlow(config_entries.OptionsFlow):
 		if multiple:return A if isinstance(A,list)else B._normalize_target(A)
 		if isinstance(A,list):return A[0]if A else''
 		return A or''
-	async def async_step_init(A,user_input=_A):B=A.config_entry.entry_id;return A.async_show_menu(step_id='init',menu_options=[_D,'license'],description_placeholders={'panel_url':f"/lutron-keypads?entry={B}",_A3:A.config_entry.title})
+	async def async_step_init(A,user_input=_A):B=A.config_entry.entry_id;return A.async_show_menu(step_id='init',menu_options=[_D,'license'],description_placeholders={'panel_url':f"/buttons-machine?entry={B}",_A3:A.config_entry.title})
 	async def async_step_license(A,user_input=_A):
 		C=user_input;B='license_key'
 		if C is not _A:D=dict(A.config_entry.options);D[B]=C.get(B,'').strip();return A.async_create_entry(title='',data=D)

@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from.const import DOMAIN,CONF_KEYPAD_TYPE,KEYPAD_GENERIC,get_button_layout
 _LOGGER=logging.getLogger(__name__)
-def _keypad_device_info(entry):A=entry;return DeviceInfo(identifiers={(DOMAIN,A.entry_id)},name=A.title,manufacturer=_D,model=A.data.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC).replace('_',' ').title(),configuration_url=f"homeassistant://lutron-keypads?entry={A.entry_id}")
+def _keypad_device_info(entry):A=entry;return DeviceInfo(identifiers={(DOMAIN,A.entry_id)},name=A.title,manufacturer=_D,model=A.data.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC).replace('_',' ').title(),configuration_url=f"homeassistant://buttons-machine?entry={A.entry_id}")
 async def async_setup_entry(hass,entry,async_add_entities):
 	B=async_add_entities;A=entry
 	if A.data.get('_controller'):B([LutronControllerSwitch(hass,A)]);return
@@ -73,7 +73,7 @@ class LutronControllerSwitch(SwitchEntity):
 	_attr_has_entity_name=_C;_attr_should_poll=_B;_attr_entity_category=EntityCategory.CONFIG;_attr_name='Show in sidebar';_attr_icon='mdi:dock-left'
 	def __init__(A,hass,entry):B=entry;A._hass=hass;A._entry=B;A._attr_unique_id=f"{B.entry_id}_show_in_sidebar";A._attr_is_on=_B
 	@property
-	def device_info(self):return DeviceInfo(identifiers={(DOMAIN,'controller')},name='Lutron Keypad Controller',manufacturer=_D,model='Keypad Controller',configuration_url='homeassistant://lutron-keypads')
+	def device_info(self):return DeviceInfo(identifiers={(DOMAIN,'controller')},name='Lutron Keypad Controller',manufacturer=_D,model='Keypad Controller',configuration_url='homeassistant://buttons-machine')
 	async def async_added_to_hass(A):await super().async_added_to_hass();from.import _load_sidebar_show as B,async_set_sidebar as C;A._attr_is_on=await B(A._hass);C(A._hass,A._attr_is_on);A.async_write_ha_state()
 	async def async_turn_on(A,**B):await A._set(_C)
 	async def async_turn_off(A,**B):await A._set(_B)
