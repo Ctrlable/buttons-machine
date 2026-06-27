@@ -1,5 +1,5 @@
 {
-  "name": "Lutron Keypad Controller",
+  "name": "Buttons Machine",
   "render_readme": true,
   "homeassistant": "2023.6.0"
 }
