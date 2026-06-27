@@ -2,7 +2,7 @@
 
 **Buttons Machine** is a custom integration for **Ctrlable Pro** (Ctrlable's professional smart-home platform). It maps the physical buttons on your keypads to actions and drives each keypad's LED indicators so they reflect the real state of your system.
 
-Program every button visually in a sidebar panel reminiscent of Lutron Designer — no processor re-programming required. Pick what each button does, bind its LED to the lights it controls, and Buttons Machine handles the dispatch and feedback inside Ctrlable Pro.
+Program every button visually in a clean visual sidebar panel — no processor re-programming required. Pick what each button does, bind its LED to the lights it controls, and Buttons Machine handles the dispatch and feedback inside Ctrlable Pro.
 
 > Formerly named *Lutron Keypad Controller*.
 
@@ -53,7 +53,7 @@ Every button is configured individually in the visual programming panel.
 
 ### Programming Panel
 
-A sidebar panel in Ctrlable Pro at the URL path `/buttons-machine`, modeled after Lutron Designer, where you configure every keypad, button, action, and LED binding.
+A sidebar panel in Ctrlable Pro at the URL path `/buttons-machine`, where you configure every keypad, button, action, and LED binding.
 
 ---
 
