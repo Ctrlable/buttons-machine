@@ -4,7 +4,6 @@
 
 Program every button visually in a clean visual sidebar panel — no processor re-programming required. Pick what each button does, bind its LED to the lights it controls, and Buttons Machine handles the dispatch and feedback inside Ctrlable Pro.
 
-> Formerly named *Lutron Keypad Controller*.
 
 ---
 
