@@ -5,9 +5,10 @@ from.base import KeypadBackend
 from.caseta import CasetaBackend
 from.lip import LipBackend
 from.rfwc5 import RFWC5Backend
-_BACKENDS={_A:CasetaBackend,'lip':LipBackend,'rfwc5':RFWC5Backend}
+from.zen35 import ZEN35Backend
+_BACKENDS={_A:CasetaBackend,'lip':LipBackend,'rfwc5':RFWC5Backend,'zen35':ZEN35Backend}
 def get_backend(config_entry):
 	A=config_entry;B=_A
 	if A is not None:B=A.data.get('backend')or _A
 	return _BACKENDS.get(B,CasetaBackend)()
-__all__=['KeypadBackend','CasetaBackend','LipBackend','RFWC5Backend','get_backend']
+__all__=['KeypadBackend','CasetaBackend','LipBackend','RFWC5Backend','ZEN35Backend','get_backend']

@@ -52,6 +52,13 @@
         "data": {
           "keypad": "Keypad"
         }
+      },
+      "zen35": {
+        "title": "Select Keypad (Zooz ZEN35 / ZEN32)",
+        "description": "Found {count} Zooz ZEN35/ZEN32 Z-Wave scene controller(s). Select the one you want to configure.",
+        "data": {
+          "keypad": "Keypad"
+        }
       }
     },
     "error": {
