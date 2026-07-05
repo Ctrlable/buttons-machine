@@ -16,6 +16,7 @@ Keypads are grouped by the backend/transport that talks to them. Each backend is
 | **Lutron Leap/Caséta** | LEAP protocol | SeeTouch, Hybrid SeeTouch, Sunnata, Hybrid Sunnata, Alisse/Alisée, Palladiom, Tabletop, Pico remotes | Lutron Caséta and RA2 Select systems. |
 | **Lutron LIP** | LIP protocol | SeeTouch, Palladiom, Pico, Tabletop and similar QS keypads | Lutron Homeworks QS / RadioRA systems. Native hold and double-tap supported. Engraved button labels and raise/lower are auto-detected from the processor database. |
 | **Eaton RFWC5** | Z-Wave via zwave-js-ui (MQTT) | Eaton/Cooper RFWC5 / RFWDC 5-button scene keypad | Reliable press on/off decoding and LED sync from the keypad's pushed indicator, rapid multi-button handling, cover-cycle support, and self-healing gateway discovery. |
+| **Zooz ZEN35 / ZEN32** | Z-Wave (zwave_js) | Zooz ZEN35 and ZEN32 scene controllers | Central Scene button events with per-button LED indicators (Indicator CC) and configurable LED colours. |
 
 ---
 
@@ -32,8 +33,9 @@ Every button is configured individually in the visual programming panel.
 | **Automation** | Triggers an automation. |
 | **Script** | Runs a script. |
 | **Entity Toggle** | Toggles an entity, with Room Mode / Scene Mode LED logic. |
-| **Cover Cycle** | Cycles a cover through open → stop → close. |
-| **Dim Cycle** | Steps a light through configurable brightness levels. |
+| **Cover Cycle** | Cycles a cover: open → stop → close → stop (reverses after a stop). |
+| **Dim Cycle** | Continuously ramps a light up/down until it hits the limit or you press again — a hold-to-dim feel via presses (Quick / Smooth / Paced / Custom speed). |
+| **Dim Sequence** | Steps a light through preset levels: 100% → 75% → 50% → 25% → off. |
 | **Raise / Lower** | Ramps lights or shades up or down. |
 | **None** | Leaves the button unassigned. |
 
@@ -85,6 +87,7 @@ Buttons Machine uses per-module licensing through **portal.ctrlable.com**. Each 
 - **Lutron Leap/Caséta**
 - **Lutron LIP**
 - **Eaton RFWC5**
+- **Zooz ZEN35 / ZEN32**
 
 A valid, **instance-bound** license is required for each module in use. Apply licenses from the **License** dialog in the Buttons Machine panel.
 
