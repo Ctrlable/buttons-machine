@@ -15,7 +15,7 @@ Keypads are grouped by the backend/transport that talks to them. Each backend is
 |--------|-----------|---------|-------|
 | **Lutron Leap/Caséta** | LEAP protocol | SeeTouch, Hybrid SeeTouch, Sunnata, Hybrid Sunnata, Alisse/Alisée, Palladiom, Tabletop, Pico remotes | Lutron Caséta and RA2 Select systems. |
 | **Lutron LIP** | LIP protocol | SeeTouch, Palladiom, Pico, Tabletop and similar QS keypads | Lutron Homeworks QS / RadioRA systems. Native hold and double-tap supported. Engraved button labels and raise/lower are auto-detected from the processor database. |
-| **Eaton RFWC5** | Z-Wave | Eaton RFWC5 5-button scene keypad | Race-condition-free LED bitmask control. |
+| **Eaton RFWC5** | Z-Wave via zwave-js-ui (MQTT) | Eaton/Cooper RFWC5 / RFWDC 5-button scene keypad | Reliable press on/off decoding and LED sync from the keypad's pushed indicator, rapid multi-button handling, cover-cycle support, and self-healing gateway discovery. |
 
 ---
 
