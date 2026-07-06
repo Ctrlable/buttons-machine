@@ -34,7 +34,7 @@ Every button is configured individually in the visual programming panel.
 | **Script** | Runs a script. |
 | **Entity Toggle** | Toggles an entity, with Room Mode / Scene Mode LED logic. |
 | **Cover Cycle** | Cycles a cover: open → stop → close → stop (reverses after a stop). |
-| **Dim Cycle** | Continuously ramps a light up/down until it hits the limit or you press again — a hold-to-dim feel via presses (Quick / Smooth / Paced / Custom speed). |
+| **Dim Cycle** | Continuously ramps a light up/down until it hits the limit or you press again — a hold-to-dim feel via presses (Quick / Smooth / Paced / Custom speed). On the RFWC5, an optional **Always-fast** mode makes every press instant and poll-free (trading the LED status) for keypads installed far from the Z-Wave controller. |
 | **Dim Sequence** | Steps a light through preset levels: 100% → 75% → 50% → 25% → off. |
 | **Raise / Lower** | Ramps lights or shades up or down. |
 | **None** | Leaves the button unassigned. |
