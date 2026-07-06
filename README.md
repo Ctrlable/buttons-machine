@@ -28,7 +28,7 @@ Every button is configured individually in the visual programming panel.
 
 | Action | What it does |
 |--------|--------------|
-| **Stateful Scene** | Activates a scene and tracks it as the active scene for LED feedback. |
+| **Stateful Scene** | Toggles a [Stateful Scenes](https://github.com/hugobloem/stateful_scenes) switch (activate / revert) as a radio group; the LED mirrors the switch's real "is the scene active" state. |
 | **Scene** | Activates a plain scene with no state tracking. |
 | **Automation** | Triggers an automation. |
 | **Script** | Runs a script. |
@@ -38,6 +38,14 @@ Every button is configured individually in the visual programming panel.
 | **Dim Sequence** | Steps a light through preset levels: 100% → 75% → 50% → 25% → off. |
 | **Raise / Lower** | Ramps lights or shades up or down. |
 | **None** | Leaves the button unassigned. |
+
+### Programming Panel
+
+A tabbed, responsive UI (desktop, tablet, mobile):
+
+- **Shared Programs** — define a button program once and link it to buttons across any number of keypads; edit it in one place and every linked button updates (e.g. a "Welcome" scene shared across three entrances).
+- **Copy / Paste** — right-click a button or a keypad to copy its programming and paste it (all / programming only / names only) onto another.
+- **Bulk add** — discover and add multiple keypads at once.
 
 ### LED Feedback
 
