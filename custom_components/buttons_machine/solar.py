@@ -147,7 +147,11 @@ class SolarManager:
 		B=eid;A._released.add(B);C=A._autoreset.pop(B,_B)
 		if C:C()
 		D=int(p.get('autoreset_control_seconds',0)or 0)
-		if D>0:from homeassistant.helpers.event import async_call_later as E;A._autoreset[B]=E(A.hass,D,lambda _now:A.rearm_light(B))
+		if D>0:
+			from homeassistant.helpers.event import async_call_later as E
+			@callback
+			def F(_now,_eid=B):A.rearm_light(_eid)
+			A._autoreset[B]=E(A.hass,D,F)
 	def install_interceptor(A):
 		if A._installed:return
 		B=(A.hass.data.get(DOMAIN,{})or{}).get(_L)or{}
