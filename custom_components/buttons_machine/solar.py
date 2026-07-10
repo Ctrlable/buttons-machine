@@ -143,6 +143,10 @@ class SolarManager:
 		B=eid;A._released.discard(B);C=A._autoreset.pop(B,_B)
 		if C:C()
 		A.hass.async_create_task(A._apply_owner(B))
+	def release_for_off(A,eid):
+		B=eid;C=_solar_owner(A.hass,B);D=A._programs.get(C)if C else _B
+		if D is not _B:A._release(B,D)
+		else:A._released.add(B)
 	def _release(A,eid,p):
 		B=eid;A._released.add(B);C=A._autoreset.pop(B,_B)
 		if C:C()
@@ -212,3 +216,5 @@ def _get_solar_manager(hass):
 	return A
 def solar_rearm(hass,eid):
 	if _solar_owner(hass,eid):_get_solar_manager(hass).rearm_light(eid)
+def solar_release(hass,eid):
+	if _solar_owner(hass,eid):_get_solar_manager(hass).release_for_off(eid)
