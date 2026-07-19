@@ -59,6 +59,15 @@
         "data": {
           "keypad": "Keypad"
         }
+      },
+      "control4": {
+        "title": "Control4 keypad",
+        "description": "Pick a registered Control4 keypad ({count} available), or enter its Keypad ID manually. {note}",
+        "data": {
+          "keypad": "Registered keypad",
+          "device_serial": "Keypad ID (manual)",
+          "name": "Name"
+        }
       }
     },
     "error": {
