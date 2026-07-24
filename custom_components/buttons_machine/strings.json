@@ -68,6 +68,14 @@
           "device_serial": "Keypad ID (manual)",
           "name": "Name"
         }
+      },
+      "z2m": {
+        "title": "Add Zigbee2MQTT remote",
+        "description": "Found {count} Zigbee2MQTT remote(s) that report button actions. Pick one below, or type a device's friendly name to add it manually.",
+        "data": {
+          "remote": "Remote",
+          "manual_name": "…or enter a friendly name"
+        }
       }
     },
     "error": {
