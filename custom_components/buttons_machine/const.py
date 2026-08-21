@@ -6,12 +6,12 @@ _L='automation'
 _K='cover'
 _J='switch'
 _I='interval'
-_H='is_lower'
-_G='is_raise'
-_F='number'
-_E='light'
-_D='fade'
-_C='step'
+_H='light'
+_G='fade'
+_F='step'
+_E='is_lower'
+_D='is_raise'
+_C='number'
 _B=True
 _A=False
 DOMAIN='buttons_machine'
@@ -65,15 +65,15 @@ ACTION_RAISE='raise'
 ACTION_LOWER='lower'
 ACTION_NONE='none'
 ACTION_TYPES=[ACTION_STATEFUL_SCENE,ACTION_HA_SCENE,ACTION_AUTOMATION,ACTION_SCRIPT,ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_COVER_CYCLE,ACTION_DIM_CYCLE,ACTION_LIGHT_CYCLE_DIM,ACTION_RAISE,ACTION_LOWER,ACTION_NONE]
-DIM_CYCLE_MODES={'quick':{_C:10,_I:.25,_D:.25},_N:{_C:5,_I:.35,_D:.35},'paced':{_C:3,_I:.6,_D:.6}}
+DIM_CYCLE_MODES={'quick':{_F:10,_I:.25,_G:.25},_N:{_F:5,_I:.35,_G:.35},'paced':{_F:3,_I:.6,_G:.6}}
 DIM_CYCLE_DEFAULT_MODE=_N
 DIM_CYCLE_STEP_MIN,DIM_CYCLE_STEP_MAX=1,25
 DIM_CYCLE_TIME_MIN,DIM_CYCLE_TIME_MAX=.1,2.
 RAMP_AUTO='auto'
 RAMP_NATIVE='native'
-RAMP_FADE=_D
+RAMP_FADE=_G
 RAMP_CHUNK='chunk'
-RAMP_STEP=_C
+RAMP_STEP=_F
 RAMP_NONE='none'
 RAMP_MODES=[RAMP_AUTO,RAMP_NATIVE,RAMP_FADE,RAMP_CHUNK,RAMP_STEP,RAMP_NONE]
 RAMP_MODE_LABELS={RAMP_AUTO:'Auto',RAMP_NATIVE:'Bridge ramp',RAMP_FADE:'Smooth fade',RAMP_CHUNK:'Chunked fade',RAMP_STEP:'Step from Ctrlable Pro',RAMP_NONE:'No live dim'}
@@ -91,15 +91,17 @@ SENSOR_SUFFIX_STATUS='status'
 SENSOR_SUFFIX_LAST_BTN='last_button'
 ACTION_TYPE_LABELS={ACTION_STATEFUL_SCENE:'Stateful Scene',ACTION_HA_SCENE:'HA Scene',ACTION_AUTOMATION:'Automation',ACTION_SCRIPT:'Script',ACTION_ENTITY_TOGGLE:'Entity Toggle',ACTION_SINGLE_ACTION:'Single Action',ACTION_COVER_CYCLE:'Cover Cycle',ACTION_DIM_CYCLE:'Dim Cycle',ACTION_LIGHT_CYCLE_DIM:'Dim Sequence',ACTION_RAISE:'Raise',ACTION_LOWER:'Lower',ACTION_NONE:'None'}
 ACTION_LABEL_TO_TYPE={B:A for(A,B)in ACTION_TYPE_LABELS.items()}
-ACTION_TYPE_DOMAINS={ACTION_STATEFUL_SCENE:[_J],ACTION_HA_SCENE:['scene'],ACTION_AUTOMATION:[_L],ACTION_SCRIPT:[_M],ACTION_ENTITY_TOGGLE:[_E,_J,'fan',_O,_P,_K],ACTION_SINGLE_ACTION:[_E,_J,'fan',_O,_P,_K],ACTION_COVER_CYCLE:[_K],ACTION_DIM_CYCLE:[_E],ACTION_LIGHT_CYCLE_DIM:[_E],ACTION_RAISE:[],ACTION_LOWER:[],ACTION_NONE:[]}
+ACTION_TYPE_DOMAINS={ACTION_STATEFUL_SCENE:[_J],ACTION_HA_SCENE:['scene'],ACTION_AUTOMATION:[_L],ACTION_SCRIPT:[_M],ACTION_ENTITY_TOGGLE:[_H,_J,'fan',_O,_P,_K],ACTION_SINGLE_ACTION:[_H,_J,'fan',_O,_P,_K],ACTION_COVER_CYCLE:[_K],ACTION_DIM_CYCLE:[_H],ACTION_LIGHT_CYCLE_DIM:[_H],ACTION_RAISE:[],ACTION_LOWER:[],ACTION_NONE:[]}
 MULTI_ENTITY_ACTIONS=frozenset({ACTION_ENTITY_TOGGLE,ACTION_SINGLE_ACTION,ACTION_COVER_CYCLE,ACTION_LIGHT_CYCLE_DIM})
 ACTION_TYPES_NEEDING_ENTITY=frozenset(A for(A,B)in ACTION_TYPE_DOMAINS.items()if B)
 KEYPAD_LAYOUTS={KEYPAD_SEETOUCH:(6,_B),KEYPAD_SEETOUCH_HYBRID:(5,_B),KEYPAD_SUNNATA:(4,_B),KEYPAD_SUNNATA_HYBRID:(3,_B),KEYPAD_ALISEE:(5,_A),KEYPAD_PALLADIOM:(5,_B),KEYPAD_TABLETOP:(10,_A),KEYPAD_PICO:(3,_A),KEYPAD_AVIENA:(8,_A),KEYPAD_BILRESA:(9,_A),KEYPAD_GENERIC:(6,_B)}
 def get_button_list(keypad_type):
-	A,C=KEYPAD_LAYOUTS.get(keypad_type,KEYPAD_LAYOUTS[KEYPAD_GENERIC]);B=[{_F:A,_G:_A,_H:_A}for A in range(1,A+1)]
-	if C:B.append({_F:A+1,_G:_B,_H:_A});B.append({_F:A+2,_G:_A,_H:_B})
+	A,C=KEYPAD_LAYOUTS.get(keypad_type,KEYPAD_LAYOUTS[KEYPAD_GENERIC]);B=[{_C:A,_D:_A,_E:_A}for A in range(1,A+1)]
+	if C:B.append({_C:A+1,_D:_B,_E:_A});B.append({_C:A+2,_D:_A,_E:_B})
 	return B
 def get_button_layout(entry_data):
-	A=entry_data;B=A.get('button_numbers')
-	if B:C=A.get('raise_button');D=A.get('lower_button');return[{_F:A,_G:A==C,_H:A==D}for A in sorted(B)]
+	C='button_numbers';A=entry_data
+	if A.get(CONF_KEYPAD_TYPE)==KEYPAD_BILRESA:D=A.get(C)or list(range(1,10));return[{_C:A,_D:A%3==1,_E:A%3==2}for A in D]
+	B=A.get(C)
+	if B:E=A.get('raise_button');F=A.get('lower_button');return[{_C:A,_D:A==E,_E:A==F}for A in sorted(B)]
 	return get_button_list(A.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC))
