@@ -29,20 +29,21 @@ class MatterEventBackend(KeypadBackend):
 	async def async_write_led(A,hass,led_entity,is_on):0
 	async def async_find_leds(A,hass,config_entry):return{}
 def _dispatch(controller,btn,ev_type):
-	E='release';D='press';C=ev_type;B=controller;A=btn
-	if C==_HOLD:B.handle_button(A,D);B.handle_button(A,'hold');return
-	if C==_HOLD_RELEASE:B.handle_button(A,E);return
+	F='release';E='press';C=ev_type;B=controller;A=btn
+	if C==_HOLD:B.handle_button(A,E);B.handle_button(A,'hold');return
+	if C==_HOLD_RELEASE:B.handle_button(A,F);return
 	if not C.startswith('multi_press_'):_LOGGER.debug("'%s': button %d -> unhandled event %r",B.name,A,C);return
-	try:F=int(C.rsplit('_',1)[1])
+	try:D=int(C.rsplit('_',1)[1])
 	except(IndexError,ValueError):return
 	G=A%3
 	if G==0:
-		B.handle_button(A,D)
-		if F==2:B.handle_button(A,'double_tap')
-		B.handle_button(A,E);return
+		B.handle_button(A,E)
+		if D==2:B.handle_button(A,'double_tap')
+		elif D>=3:B.handle_button(A,'triple_tap')
+		B.handle_button(A,F);return
 	I=1 if G==1 else-1;H=getattr(B,'handle_scroll',_A)
-	if H is _A:B.handle_button(A,D);B.handle_button(A,E);return
-	H(A,I,F)
+	if H is _A:B.handle_button(A,E);B.handle_button(A,F);return
+	H(A,I,D)
 def _button_entities(hass,controller):
 	from homeassistant.helpers import device_registry as G,entity_registry as C;import re;D=getattr(controller,'_config_entry',_A);A=str((D.data.get('device_id')if D else'')or'')
 	if not A:return{}
