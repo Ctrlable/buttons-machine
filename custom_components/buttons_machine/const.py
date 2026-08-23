@@ -31,6 +31,7 @@ CONF_SCROLL_STEP='scroll_step'
 CONF_WHEEL_DECOUPLED='wheel_decoupled'
 CONF_MEDIA_COMMAND='media_command'
 CONF_COVER_HOLD_MOVE='cover_hold_move'
+CONF_BLOCK_OWN_TARGETS='own_targets'
 MEDIA_COMMANDS={'play_pause':'media_play_pause','play':'media_play','pause':'media_pause','stop':'media_stop','next':'media_next_track','previous':'media_previous_track','mute':'volume_mute',_L:_L,_M:_M}
 CONF_ACTION_TARGET='action_target'
 CONF_ACTION_PARAMS='action_params'
