@@ -113,3 +113,8 @@ def get_button_layout(entry_data):
 	B=A.get(C)
 	if B:E=A.get('raise_button');F=A.get('lower_button');return[{_C:A,_D:A==E,_E:A==F}for A in sorted(B)]
 	return get_button_list(A.get(CONF_KEYPAD_TYPE,KEYPAD_GENERIC))
+def matter_address(unique_id):
+	A=str(unique_id or'').split('-')
+	try:B=A.index('MatterNodeDevice');return int(A[B-1],16),int(A[B+1])
+	except(ValueError,IndexError):return None,None
+def bilresa_button_name(n):A,B=(n-1)//3+1,(n-1)%3;return('Ind %d ◀ Scroll left','Ind %d ▶ Scroll right','Ind %d ● Press')[B]%A
