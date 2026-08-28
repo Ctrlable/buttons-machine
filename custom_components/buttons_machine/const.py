@@ -1,3 +1,4 @@
+_S='Ind %d ● Press'
 _R='media_player'
 _Q='input_boolean'
 _P='smooth'
@@ -117,4 +118,6 @@ def matter_address(unique_id):
 	A=str(unique_id or'').split('-')
 	try:B=A.index('MatterNodeDevice');return int(A[B-1],16),int(A[B+1])
 	except(ValueError,IndexError):return None,None
-def bilresa_button_name(n):A,B=(n-1)//3+1,(n-1)%3;return('Ind %d ◀ Scroll left','Ind %d ▶ Scroll right','Ind %d ● Press')[B]%A
+_BILRESA_LEGACY='Ind %d ◀ Scroll left','Ind %d ▶ Scroll right',_S
+def bilresa_button_name(n):A,B=(n-1)//3+1,(n-1)%3;return('Ind %d ↻ Clockwise','Ind %d ↺ Counter-clockwise',_S)[B]%A
+def bilresa_legacy_button_name(n):A,B=(n-1)//3+1,(n-1)%3;return _BILRESA_LEGACY[B]%A
