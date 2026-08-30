@@ -106,3 +106,23 @@ A valid, **instance-bound** license is required for each module in use. Apply li
 ## By Ctrlable
 
 Buttons Machine is built and maintained by **Ctrlable** and runs on **Ctrlable Pro**.
+
+---
+
+## Trademarks and Non-Affiliation
+
+Buttons Machine is an **independent product from Ctrlable** (WaveSquare LLC, d/b/a Ctrlable). Ctrlable is **not affiliated with, authorised by, endorsed by, sponsored by, or officially connected to** Lutron Electronics Co., Inc., Eaton, Zooz, IKEA, Tuya, Snap One (Control4), Signify (Philips Hue), or any other manufacturer or standards body named here.
+
+Lutron, Caséta, RA2 Select, HomeWorks, RadioRA, SeeTouch, Sunnata, Alisse, Alisée, Palladiom, Aviena, Pico and Ketra are trademarks or registered trademarks of Lutron Electronics Co., Inc. All other product names, logos, brands and standards marks — including Eaton, Cooper, Zooz, IKEA, BILRESA, RODRET, Tuya, Control4, Home Assistant, Zigbee2MQTT, Z-Wave, Matter, Thread, Philips Hue and DALI — are the property of their respective owners.
+
+These names are used **solely to identify the hardware, protocols and platforms with which Buttons Machine is compatible**. Their use does not imply any affiliation with or endorsement by their owners. Keypad illustrations in the programming panel are original schematic drawings by Ctrlable, provided to help you identify your own hardware; they are not manufacturer artwork.
+
+"Ctrlable" and "Buttons Machine" are trademarks of WaveSquare LLC.
+
+© 2025-2026 WaveSquare LLC. All rights reserved.
+
+---
+
+## Licence
+
+Buttons Machine is **proprietary, commercially licensed software — not open source**. See [LICENSE](LICENSE) for the End User License Agreement. Licences are issued through [portal.ctrlable.com](https://portal.ctrlable.com).
