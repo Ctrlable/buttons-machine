@@ -111,7 +111,7 @@ class SolarManager:
 		A._released.clear();A.install_interceptor()
 		for D in A._unsubs.values():
 			try:D()
-			except Exception:pass
+			except Exception:0
 		A._unsubs={}
 		for(C,B)in A._programs.items():
 			if B.get(_I,_D)is not _B and(B.get(_Q)or[]):E=max(30,int(B.get('interval_s',90)));A._unsubs[C]=async_track_time_interval(A.hass,A._tick(C),timedelta(seconds=E))
@@ -180,7 +180,7 @@ class SolarManager:
 	def uninstall_interceptor(A):
 		for B in A._intercept_removers:
 			try:B()
-			except Exception:pass
+			except Exception:0
 		A._intercept_removers=[];A._installed=_B
 	def _extract_eids(C,data):
 		A=data.get(_F)

@@ -16,7 +16,7 @@ try:
 		try:
 			_mine=sorted(_cache.glob(f"{_name}-*.abi3.so"),key=lambda q:q.stat().st_mtime,reverse=_A)
 			for _old in _mine[3:]:_old.unlink(missing_ok=_A)
-		except Exception:pass
+		except Exception:0
 	_load=_dst
 except Exception:_load=_src
 _spec=_u.spec_from_file_location(__name__,_load)
