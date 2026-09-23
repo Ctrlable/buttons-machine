@@ -69,6 +69,15 @@
           "name": "Name"
         }
       },
+      "be3": {
+        "title": "LifeSmart SUBLIME keypad",
+        "description": "{note}\n\nKeypads found on the BE3 bus: {count}",
+        "data": {
+          "keypad": "Keypad",
+          "device_serial": "Keypad id",
+          "name": "Name"
+        }
+      },
       "z2m": {
         "title": "Add Zigbee2MQTT remote",
         "description": "Found {count} Zigbee2MQTT remote(s) that report button actions. Pick one below, or type a device's friendly name to add it manually.",
