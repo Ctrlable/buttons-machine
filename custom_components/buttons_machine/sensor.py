@@ -119,8 +119,13 @@ class ButtonEntitySensor(_LutronButtonSensorBase):
 	@property
 	def native_value(self):
 		A=self._get_btn_cfg().get(CONF_ACTION_TARGET)
-		if isinstance(A,list):return', '.join(A)if A else _D
+		if isinstance(A,list):
+			if not A:return _D
+			if len(A)==1:return A[0]
+			return f"{len(A)} entities"
 		return A or _D
+	@property
+	def extra_state_attributes(self):A=self._get_btn_cfg().get(CONF_ACTION_TARGET);return{'targets':list(A)if isinstance(A,list)else[A]if A else[]}
 class ButtonLedSensor(_LutronButtonSensorBase):
 	@property
 	def unique_id(self):return f"{self._entry.entry_id}_button_{self._btn_number}_led"
